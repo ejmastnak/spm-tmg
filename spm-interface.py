@@ -156,7 +156,8 @@ class MCModulationInterface:
             for i, cluster in enumerate(clusters):
                 print(cluster.centroid)
                 print(cluster.endpoints[0])
-                cluster_string = "\n\nSignificance Region {}".format(i+1)  # include a newline character
+                cluster_string = "\n" + 50*"-"
+                cluster_string += "\nSignificance Region {}".format(i+1)  # include a newline character
                 cluster_string += "\nProbability: {:.2e} = {:.4f}".format(cluster.P, cluster.P)
                 cluster_string += "\nStart: {:.2f}\t End: {:.2f}".format(cluster.endpoints[0], cluster.endpoints[1])
                 cluster_string += "\nCentroid: ({:.2f}, {:.2f})".format(cluster.centroid[0], cluster.centroid[1])
@@ -458,6 +459,8 @@ class MCModulationInterface:
         # plot SPM results:
         ax = plt.axes((0.55, 0.15, 0.35, 0.8))
         ti.plot()
+        ax.text(73, ti.zstar + 0.4, "$\\alpha = {:.2f}$\n$t^* = {:.2f}$".format(ti.alpha, ti.zstar),
+                va='bottom', ha='left', bbox=dict(facecolor='#FFFFFF', edgecolor='#222222', boxstyle='round,pad=0.3'))
         # ti.plot_threshold_label(fontsize=10, color='black')
         # ti.plot_p_values(size=10)  # offsets=[(0, 0.3)]
         ax.set_xlabel(x_label)
@@ -466,6 +469,15 @@ class MCModulationInterface:
     # -----------------------------------------------------------------------------
     # START GRAPH UPDATE FUNCTIONS
     # -----------------------------------------------------------------------------
+    def plot_threshold(self, ax, threshold, alpha):
+        """
+        Plots threshold t-statistic value and corresponding alpha value on the inputted axis
+        :param ax: matplotlib.axes._axes.Axes object
+        :param threshold: threshold t-statistic value
+        :param alpha: alpha value for t test
+        """
+
+
     def update_spm_graph(self, t, ti):
         t_star = ti.zstar
         p = ti.p
