@@ -38,7 +38,8 @@ class MCModulationInterface:
         self.import_potentiated_button = ttk.Button(self.controlframe, text="Import Potentiated Data", command=self.import_potentiated)
         self.import_baseline_button = ttk.Button(self.controlframe, text="Import Baseline Data", command=self.import_baseline)
         self.compare_button = ttk.Button(self.controlframe, text="Compare", command=self.compare)
-        self.export_button = ttk.Button(self.controlframe, text="Export SPM", command=self.export)
+        self.export_button = ttk.Button(self.controlframe, text="Export t Curve", command=self.export_tcurve)
+        # self.export_button = ttk.Button(self.controlframe, text="Export t Parameters", command=self.export_tcurve)
         self.close_button = ttk.Button(self.controlframe, text="Exit", command=self.close)
 
         # Baseline data window
@@ -196,7 +197,7 @@ class MCModulationInterface:
 
             except Exception as e:
                 print("Error importing data: " + str(e))
-                traceback.print_tb(err.__traceback__)
+                traceback.print_tb(e.__traceback__)
                 return
 
     def import_potentiated(self):
@@ -255,10 +256,11 @@ class MCModulationInterface:
         #     print("Error performing SPM analysis: " + str(e))
         #     return
 
-    def export(self, *args):  # used to write an output file
+    def export_tcurve(self, *args):  # used to write an output file
         """
-        Action for the export button widget.
-        Exports the current spm t signal into a local CSV file.
+        Action for the export t-curve button widget.
+        Export the t-statistic as a 2D array to a local CSV file.
+        First column is time, second is t-statistic
         """
         if self.is_import_data_null():  # null data check
             return
@@ -266,7 +268,36 @@ class MCModulationInterface:
         try:
             t = spm1d.stats.ttest2(self.pot_data.T, self.baseline_data.T, equal_var=False)
             filename = filedialog.asksaveasfilename(filetypes=[("CSV files", "*.csv")])
-            if filename: np.savetxt(filename, t.z)  # null check on filename to avoid cancelled dialog problems
+            if filename is None or filename == "":  # in case export was cancelled
+                return
+            if not filename.endswith(".csv"):  # append .csv extension, unless user has done so manually
+                filename += ".csv"
+            time = np.linspace(0, len(t.z)-1, len(t.z)) + self.start_row  # assumes 1 kHz sampling, i.e. 1ms per sample
+            header = "Time [ms], SPM t-statistic"
+            np.savetxt(filename, np.column_stack([time, t.z]), delimiter=',', header=header)
+        except Exception as e:
+            print("Error performing SPM analysis: " + str(e))
+            return
+
+    def export_tparams(self, *args):  # used to write an output file
+        """
+        Action for the export parameters button widget.
+        Exports various ti object parameters to a local text file
+        """
+        if self.is_import_data_null():  # null data check
+            return
+
+        try:
+            t = spm1d.stats.ttest2(self.pot_data.T, self.baseline_data.T, equal_var=False)
+            filename = filedialog.asksaveasfilename(filetypes=[("Text files", "*.txt")])
+            if filename is None or filename == "":  # in case export was cancelled
+                return
+            if not filename.endswith(".txt"):  # append .txt extension, unless user has done so manually
+                filename += ".txt"
+
+            time = np.linspace(0, len(t.z)-1, len(t.z)) + self.start_row  # assumes 1 kHz sampling, i.e. 1ms per sample
+            header = "Time [ms], SPM t-statistic"
+            np.savetxt(filename, np.column_stack([time, t.z]), delimiter=',', header=header)
         except Exception as e:
             print("Error performing SPM analysis: " + str(e))
             return
