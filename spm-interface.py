@@ -164,7 +164,7 @@ class MCModulationInterface:
                 A = 0.0  # area under curve
                 for k in range(1, N, 1):  # i = 1, 2, ..., N
                     A += np.abs(0.5*(z[k] + z[k-1]))*(x[k] - x[k-1])  # midpoint formula
-                A -= (threshold * (x[-1] - x[0]))  # subtract area below threshold (threhold * interval length)
+                A_threshold = A - (threshold * (x[-1] - x[0]))  # subtract area below threshold (threshold * interval length)
 
                 cluster_string = "\n" + 50*"-"  # draws a bunch of dashes i.e. ----------
                 cluster_string += "\nSignificance Region {}".format(i+1)  # include a newline character
@@ -173,7 +173,8 @@ class MCModulationInterface:
                 cluster_string += "\nStart: {:.2f}\t End: {:.2f}".format(tstart, tend)
                 cluster_string += "\nCentroid: ({:.2f}, {:.2f})".format(cluster.centroid[0], cluster.centroid[1])
                 cluster_string += "\nMaximum: {:.2f}".format(z_max)
-                cluster_string += "\nArea Above Threshold: {:.2f}".format(A)
+                cluster_string += "\nArea Above Threshold: {:.2f}".format(A_threshold)
+                cluster_string += "\nArea Above x Axis: {:.2f}".format(A)
                 analysis_string += cluster_string
         return analysis_string
 
