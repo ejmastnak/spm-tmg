@@ -38,8 +38,8 @@ class MCModulationInterface:
         self.import_potentiated_button = ttk.Button(self.controlframe, text="Import Potentiated Data", command=self.import_potentiated)
         self.import_baseline_button = ttk.Button(self.controlframe, text="Import Baseline Data", command=self.import_baseline)
         self.compare_button = ttk.Button(self.controlframe, text="Compare", command=self.compare)
-        self.export_button = ttk.Button(self.controlframe, text="Export t Curve", command=self.export_tcurve)
-        # self.export_button = ttk.Button(self.controlframe, text="Export t Parameters", command=self.export_tcurve)
+        self.export_curve_button = ttk.Button(self.controlframe, text="Export t Curve", command=self.export_tcurve)
+        self.export_params_button = ttk.Button(self.controlframe, text="Export t Parameters", command=self.export_tparams)
         self.close_button = ttk.Button(self.controlframe, text="Exit", command=self.close)
 
         # Baseline data window
@@ -108,8 +108,9 @@ class MCModulationInterface:
         self.import_baseline_button.grid(column=0, row=7, sticky=W)
         self.import_potentiated_button.grid(column=0, row=8, sticky=W)
         self.compare_button.grid(column=0, row=9, sticky=W)
-        self.export_button.grid(column=0, row=10, sticky=W)
-        self.close_button.grid(column=0, row=11, sticky=W)
+        self.export_curve_button.grid(column=0, row=10, sticky=W)
+        self.export_params_button.grid(column=0, row=11, sticky=W)
+        self.close_button.grid(column=0, row=12, sticky=W)
 
         # gridding graphs
         # self.signal_canvas.get_tk_widget().grid(column=0, row=0, sticky=(N, S, E, W))
@@ -153,20 +154,31 @@ class MCModulationInterface:
         analysis_string = "Alpha: {:.2f}".format(ti.alpha)  # alpha value
         analysis_string += "\nThreshold: {:.2f}".format(ti.zstar)  # threshold t-statistic value
         clusters = ti.clusters  # portions of curve above threshold value
+        threshold = ti.zstar
         if clusters is not None:
             for i, cluster in enumerate(clusters):
-                print(cluster.centroid)
-                print(cluster.endpoints[0])
-                cluster_string = "\n" + 50*"-"
+                tstart, tend = cluster.endpoints  # start and end time of each cluster
+                x, z = cluster._X, cluster._Z  # x and z (time and t-statistic) coordinates of the cluster
+                z_max = np.max(z)  # max value of t-statistic in this cluster
+                N = len(x)  # number of points in this cluster
+                A = 0.0  # area under curve
+                for k in range(1, N, 1):  # i = 1, 2, ..., N
+                    A += np.abs(0.5*(z[k] + z[k-1]))*(x[k] - x[k-1])  # midpoint formula
+                A -= (threshold * (x[-1] - x[0]))  # subtract area below threshold (threhold * interval length)
+
+                cluster_string = "\n" + 50*"-"  # draws a bunch of dashes i.e. ----------
                 cluster_string += "\nSignificance Region {}".format(i+1)  # include a newline character
-                cluster_string += "\nProbability: {:.2e} = {:.4f}".format(cluster.P, cluster.P)
-                cluster_string += "\nStart: {:.2f}\t End: {:.2f}".format(cluster.endpoints[0], cluster.endpoints[1])
+                cluster_string += "\nProbability: {:.2e}".format(cluster.P)
+                cluster_string += "\nProbability (decimal): {:.4f}".format(cluster.P)
+                cluster_string += "\nStart: {:.2f}\t End: {:.2f}".format(tstart, tend)
                 cluster_string += "\nCentroid: ({:.2f}, {:.2f})".format(cluster.centroid[0], cluster.centroid[1])
+                cluster_string += "\nMaximum: {:.2f}".format(z_max)
+                cluster_string += "\nArea Above Threshold: {:.2f}".format(A)
                 analysis_string += cluster_string
         return analysis_string
 
     @ staticmethod
-    def set_import_description(text_widget, text_content):
+    def set_imported_data_description(text_widget, text_content):
         """
         Wrapper method for protocol of setting data text widget info content
         Used with to give the user a description of the data they've imported
@@ -193,7 +205,7 @@ class MCModulationInterface:
             try:
                 self.baseline_data = np.loadtxt(filename, delimiter=",", skiprows=self.start_row, max_rows=self.max_rows)  # load data
                 self.process_baseline_data()  # process imported data
-                self.set_import_description(self.baseline_text_area, self.get_data_description(filename, self.baseline_data))
+                self.set_imported_data_description(self.baseline_text_area, self.get_data_description(filename, self.baseline_data))
 
             except Exception as e:
                 print("Error importing data: " + str(e))
@@ -210,7 +222,7 @@ class MCModulationInterface:
             try:
                 self.pot_data = np.loadtxt(filename, delimiter=",", skiprows=self.start_row, max_rows=self.max_rows)  # load data
                 self.process_potentiated_data()  # process imported data
-                self.set_import_description(self.potentiated_text_area, self.get_data_description(filename, self.pot_data))
+                self.set_imported_data_description(self.potentiated_text_area, self.get_data_description(filename, self.pot_data))
 
             except Exception as e:
                 print("Error importing data: " + str(e))
@@ -289,15 +301,17 @@ class MCModulationInterface:
 
         try:
             t = spm1d.stats.ttest2(self.pot_data.T, self.baseline_data.T, equal_var=False)
+            ti = t.inference(alpha=0.05, two_tailed=False, interp=True)
             filename = filedialog.asksaveasfilename(filetypes=[("Text files", "*.txt")])
             if filename is None or filename == "":  # in case export was cancelled
                 return
             if not filename.endswith(".txt"):  # append .txt extension, unless user has done so manually
                 filename += ".txt"
 
-            time = np.linspace(0, len(t.z)-1, len(t.z)) + self.start_row  # assumes 1 kHz sampling, i.e. 1ms per sample
-            header = "Time [ms], SPM t-statistic"
-            np.savetxt(filename, np.column_stack([time, t.z]), delimiter=',', header=header)
+            contents = self.get_spm_description_string(ti)
+            with open(filename, 'w') as output:
+                output.write(contents)
+
         except Exception as e:
             print("Error performing SPM analysis: " + str(e))
             return
@@ -472,7 +486,8 @@ class MCModulationInterface:
             print("Error performing SPM analysis: " + str(e))
             return
 
-        self.set_import_description(self.spm_text_area, self.get_spm_description_string(ti))
+        self.set_imported_data_description(self.spm_text_area, self.get_spm_description_string(ti))
+
         #  Plot:
         plt.close('all')
         # plot mean and SD:
@@ -507,7 +522,6 @@ class MCModulationInterface:
         :param threshold: threshold t-statistic value
         :param alpha: alpha value for t test
         """
-
 
     def update_spm_graph(self, t, ti):
         t_star = ti.zstar
