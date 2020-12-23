@@ -228,6 +228,7 @@ class MCModulationInterface:
                 self.baseline_data = np.loadtxt(filename, delimiter=",", skiprows=self.start_row, max_rows=self.max_rows)  # load data
                 self.process_baseline_data()  # process imported data
                 self.set_imported_data_description(self.baseline_text_area, self.get_data_description(filename, self.baseline_data))
+                self.baseline_filename = filename  # if import is successful, set baseline filename
 
             except Exception as e:
                 print("Error importing data: " + str(e))
@@ -245,6 +246,7 @@ class MCModulationInterface:
                 self.pot_data = np.loadtxt(filename, delimiter=",", skiprows=self.start_row, max_rows=self.max_rows)  # load data
                 self.process_potentiated_data()  # process imported data
                 self.set_imported_data_description(self.potentiated_text_area, self.get_data_description(filename, self.pot_data))
+                self.potentiated_filename = filename  # if import is successful, set potentiated filename
 
             except Exception as e:
                 print("Error importing data: " + str(e))
