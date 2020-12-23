@@ -15,8 +15,15 @@ import spm1d
 
 class MCModulationInterface:
 
-    def __init__(self):
+    def __init__(self, base_filename=None, pot_filename=None):
+        """
+        For now includes filename parameters as a hacky way to load data automatically on startup for testing
+        :param base_filename:
+        :param pot_filename:
+        """
 
+        self.baseline_filename = ""  # name of file holding baseline data
+        self.potentiated_filename = ""  # name of file holding potentiated data
         self.baseline_data = np.zeros(shape=(0, 0))  # e.g. 1000 x 10
         self.pot_data = np.zeros(shape=(0, 0))  # e.g. 1000 x 10
 
@@ -124,6 +131,11 @@ class MCModulationInterface:
         self.rootframe.columnconfigure(1, weight=2)  # graph frame
         self.rootframe.rowconfigure(0, weight=1)
 
+        # for loading data programtically (and not via gui) when testing
+        if base_filename is not None and pot_filename is not None:
+            self.set_baseline_data(base_filename)
+            self.set_potentiated_data(pot_filename)
+
         self.root.mainloop()
 
     @ staticmethod
@@ -144,13 +156,22 @@ class MCModulationInterface:
         return file_string + "\n" + dim_string_1 + "\n" + dim_string_2 + "\n" + path_string
 
     @ staticmethod
-    def get_spm_description_string(ti):
+    def export_spm_params(ti):
         """
         Used to get a string description of an SPM two-sample t-test
 
         :param ti: An SPM TI inference object
         :return:
         """
+
+        # Start header
+        # Potentiated file,"filename"
+        # Potentiated file,"filename"
+        # Alpha,
+        # T-star,
+        # # End header
+        # Parameter,Cluster,Cluster
+
         analysis_string = "Alpha: {:.2f}".format(ti.alpha)  # alpha value
         analysis_string += "\nThreshold: {:.2f}".format(ti.zstar)  # threshold t-statistic value
         clusters = ti.clusters  # portions of curve above threshold value
@@ -303,18 +324,76 @@ class MCModulationInterface:
         try:
             t = spm1d.stats.ttest2(self.pot_data.T, self.baseline_data.T, equal_var=False)
             ti = t.inference(alpha=0.05, two_tailed=False, interp=True)
-            filename = filedialog.asksaveasfilename(filetypes=[("Text files", "*.txt")])
+            filename = filedialog.asksaveasfilename(filetypes=[("Text files", "*.csv")])
             if filename is None or filename == "":  # in case export was cancelled
                 return
-            if not filename.endswith(".txt"):  # append .txt extension, unless user has done so manually
-                filename += ".txt"
+            if not filename.endswith(".csv"):  # append .csv extension, unless user has done so manually
+                filename += ".csv"
 
-            contents = self.get_spm_description_string(ti)
-            with open(filename, 'w') as output:
-                output.write(contents)
+            # Print file header
+            metadata = "# Start header\n"
+            metadata += "Baseline file,{}\n".format(Path(self.baseline_filename).name)
+            metadata += "Potentiated file,{}\n".format(Path(self.potentiated_filename).name)
+            metadata += "Alpha,{:.2f}\n".format(ti.alpha)  # alpha value
+            metadata += "Threshold,{:.2f}\n".format(ti.zstar)  # threshold t-statistic value
+            metadata += "# End header\n"
+
+            with open(filename, 'w') as output:  # open file for writing
+                output.write(metadata)  # write metadata
+
+                clusters = ti.clusters  # portions of curve above threshold value
+                threshold = ti.zstar
+
+                if clusters is None:  # catch possibility that threshold is not exceeded
+                    output.write("Significance threshold not exceeded.")
+                else:
+
+                    # Create header string of the form "# Parameter,Cluster 1,Cluster 2, ..."
+                    header = "# Parameter"
+                    for i in range(len(clusters)):
+                        header += ",Cluster {}".format(i + 1)
+                    header += "\n"  # add new line
+                    output.write(header)  # write header
+
+                    # Assign each outputted parameter a row; pack into an array for easier printing to file
+                    param_strs = ["Probability",  # probability for threshold in exponent (scientific) notation
+                                  "Probability (decimal)",  # probability as a float
+                                  "Start",
+                                  "End",
+                                  "Centroid Time",
+                                  "Centroid t-value",
+                                  "Maximum",
+                                  "Area Above Threshold",
+                                  "Area Above x Axis"]
+
+                    for i, cluster in enumerate(clusters):  # loop through significance clusters
+                        tstart, tend = cluster.endpoints  # start and end time of each cluster
+                        x, z = cluster._X, cluster._Z  # x and z (time and t-statistic) coordinates of the cluster
+                        z_max = np.max(z)  # max value of t-statistic in this cluster
+                        N = len(x)  # number of points in this cluster
+                        A = 0.0  # area under curve
+                        for k in range(1, N, 1):  # i = 1, 2, ..., N
+                            A += np.abs(0.5*(z[k] + z[k-1]))*(x[k] - x[k-1])  # midpoint formula
+                        A_threshold = A - (threshold * (x[-1] - x[0]))  # subtract area below threshold (threshold * interval length)
+
+                        param_strs[0] += ",{:.2e}".format(cluster.P)
+                        param_strs[1] += ",{:.4f}".format(cluster.P)
+                        param_strs[2] += ",{:.2f}".format(tstart)
+                        param_strs[3] += ",{:.2f}".format(tend)
+                        param_strs[4] += ",{:.2f}".format(cluster.centroid[0])
+                        param_strs[5] += ",{:.2f}".format(cluster.centroid[1])
+                        param_strs[6] += ",{:.2f}".format(z_max)
+                        param_strs[7] += ",{:.2f}".format(A_threshold)
+                        param_strs[8] += ",{:.2f}".format(A)
+
+                    # print parameter strings---this is where it's useful the strings are in an array
+                    for i, param_str in enumerate(param_strs):
+                        output.write(param_str)  # write header
+                        if i < len(param_strs):  # don't print new line for last string at end of file
+                            output.write("\n")
 
         except Exception as e:
-            print("Error performing SPM analysis: " + str(e))
+            print("Error exporting SPM parameters: " + str(e))
             return
 
     def close(self):
@@ -327,6 +406,40 @@ class MCModulationInterface:
     # -----------------------------------------------------------------------------
     # END GUI WIDGET ACTION FUNCTIONS
     # -----------------------------------------------------------------------------
+
+    def set_baseline_data(self, base_filename):
+        """
+        Action to programatically set baseline data
+        Implements the protocol for importing baseline data.
+        """
+        if base_filename:  # only called if a file is chosen and avoids null filename on cancel click
+            try:
+                self.baseline_data = np.loadtxt(base_filename, delimiter=",", skiprows=self.start_row, max_rows=self.max_rows)  # load data
+                self.process_baseline_data()  # process imported data
+                self.set_imported_data_description(self.baseline_text_area, self.get_data_description(base_filename, self.baseline_data))
+                self.baseline_filename = base_filename  # if import is successful, set baseline filename
+
+            except Exception as e:
+                print("Error importing baseline data: " + str(e))
+                traceback.print_tb(e.__traceback__)
+                return
+
+    def set_potentiated_data(self, pot_filename):
+        """
+        Action to programatically set potentiated data
+        Implements the protocol for importing potentiated data.
+        """
+        if pot_filename:  # only called if a file is chosen and avoids null filename on cancel click
+            try:
+                self.pot_data = np.loadtxt(pot_filename, delimiter=",", skiprows=self.start_row, max_rows=self.max_rows)  # load data
+                self.process_potentiated_data()  # process imported data
+                self.set_imported_data_description(self.potentiated_text_area, self.get_data_description(pot_filename, self.pot_data))
+                self.potentiated_filename = pot_filename  # if import is successful, set potentiated filename
+
+            except Exception as e:
+                print("Error importing potentiated data: " + str(e))
+                traceback.print_tb(e.__traceback__)
+                return
 
     # -----------------------------------------------------------------------------
     # START SPM SIGNAL PROCESSING FUNCTIONS
@@ -487,7 +600,7 @@ class MCModulationInterface:
             print("Error performing SPM analysis: " + str(e))
             return
 
-        self.set_imported_data_description(self.spm_text_area, self.get_spm_description_string(ti))
+        self.set_imported_data_description(self.spm_text_area, self.export_spm_params(ti))
 
         #  Plot:
         plt.close('all')
@@ -545,5 +658,26 @@ class MCModulationInterface:
     # -----------------------------------------------------------------------------
 
 
+def practice():
+    filename = "test.txt"
+    with open(filename, 'w') as output:
+        output.write("Line 1")
+        output.write("Line 2")
+
+
+def gui_launch():
+    interface = MCModulationInterface()
+
+
+def development_launch():
+    # load data programatically for development use
+    data_dir = "/Users/ejmastnak/Documents/Dropbox/projects-and-products/tmg-bmc/spm/spm-measurements/spm_1_9_2020/em/"
+    base_filename = data_dir + "em_base.csv"
+    pot_filename = data_dir + "em_pot.csv"
+    interface = MCModulationInterface(base_filename=base_filename, pot_filename=pot_filename)
+
+
 if __name__ == "__main__":
-    interface = MCModulationInterface()  # initial constructor call sets everything up
+    gui_launch()
+    # development_launch()
+    # practice()
