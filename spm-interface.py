@@ -1,14 +1,12 @@
 import matplotlib
 matplotlib.use("TkAgg")  # set tk backend
 from matplotlib import pyplot as plt
-from matplotlib.figure import Figure
 from pathlib import Path
 import os
 import traceback
 from tkinter import *
 from tkinter import ttk
 from tkinter import filedialog
-from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
 import numpy as np
 import spm1d
 
@@ -76,23 +74,6 @@ class MCModulationInterface:
         self.spm_text_area.insert(END, "No analysis results")
         self.spm_text_area.configure(state='disabled')
 
-        # # create signal graph
-        # self.signal_fig = Figure(figsize=(6, 2), dpi=100) # figure to hold graph of muscle signals
-        # t = np.arange(0, 3, .01)
-        # self.signal_subplot = self.signal_fig.add_subplot(111)
-        # self.signal_subplot.plot(t, 2 * np.sin(2 * np.pi * t))
-        # self.signal_canvas = FigureCanvasTkAgg(self.signal_fig, master=self.graphframe)
-        # self.signal_canvas.draw()
-        #
-        # # create spm graph
-        # self.spm_fig = Figure(figsize=(6, 2), dpi=100) # figure to hold spm graph
-        # # change sine to an hline, add nice labels and things
-        # t = np.arange(0, 3, .01)
-        # self.spm_subplot = self.spm_fig.add_subplot(111)
-        # self.spm_subplot.plot(t, 2 * np.sin(2 * np.pi * t))
-        # self.spm_canvas = FigureCanvasTkAgg(self.spm_fig, master=self.graphframe)
-        # self.spm_canvas.draw()
-
         # gridding widgets
         self.rootframe.grid(column=0, row=0, sticky=(N, S, E, W)) # place the root frame
 
@@ -118,10 +99,6 @@ class MCModulationInterface:
         self.export_curve_button.grid(column=0, row=10, sticky=W)
         self.export_params_button.grid(column=0, row=11, sticky=W)
         self.close_button.grid(column=0, row=12, sticky=W)
-
-        # gridding graphs
-        # self.signal_canvas.get_tk_widget().grid(column=0, row=0, sticky=(N, S, E, W))
-        # self.spm_canvas.get_tk_widget().grid(column=0, row=1, sticky=(N, S, E, W))
 
         # configure weights
         self.root.columnconfigure(0, weight=1)
@@ -267,30 +244,22 @@ class MCModulationInterface:
         pot_rows = pot_shape[0]
         pot_cols = pot_shape[1]
 
-        if base_rows != pot_rows and base_cols == pot_cols: # same number columns, different number of rows
+        if base_rows != pot_rows and base_cols == pot_cols:  # same number columns, different number of rows
             self.match_rows(base_rows, pot_rows)
 
-        elif base_rows == pot_rows and base_cols != pot_cols: # same number rows, different number columns
+        elif base_rows == pot_rows and base_cols != pot_cols:  # same number rows, different number columns
             self.match_cols(base_rows, base_cols, pot_rows, pot_cols)
 
-        elif base_shape != pot_shape: # different number of rows AND different number of columns
+        elif base_shape != pot_shape:  # different number of rows AND different number of columns
             self.match_rows(base_rows, pot_rows) # first match rows
-            self.match_cols(base_rows, base_cols, pot_rows, pot_cols) # then match columns
+            self.match_cols(base_rows, base_cols, pot_rows, pot_cols)  # then match columns
 
         if base_cols == 1 and pot_cols == 1:
             self.increase_cols(base_rows, base_cols, pot_rows, pot_cols)
 
-        self.run_two_sample_test(self.baseline_data.T, self.pot_data.T, x_label="Time [ms]", y_label="Position [mm]")
-        # print("Hi!")
-        # try:
-        #     t = spm1d.stats.ttest2(self.potentiated_data.T, self.baseline_data.T, equal_var=False)
-        #     ti = t.inference(alpha=0.05, two_tailed=False, interp=True)
-        #     self.update_signal_graph(self.baseline_data, self.potentiated_data)
-        #     self.update_spm_graph(t, ti)
-        #
-        # except Exception as e:
-        #     print("Error performing SPM analysis: " + str(e))
-        #     return
+        # TODO change back to default after development
+        self.plot_test_results()
+        # self.run_two_sample_test(self.baseline_data.T, self.pot_data.T, x_label="Time [ms]", y_label="Position [mm]")
 
     def export_tcurve(self, *args):  # used to write an output file
         """
@@ -318,7 +287,7 @@ class MCModulationInterface:
     def export_tparams(self, *args):  # used to write an output file
         """
         Action for the export parameters button widget.
-        Exports various ti object parameters to a local text file
+        Exports various ti object parameters to a local csv file in tabular format
         """
         if self.is_import_data_null():  # null data check
             return
@@ -472,6 +441,15 @@ class MCModulationInterface:
         if len(self.pot_data.shape) == 1:
             self.pot_data = self.pot_data.reshape(-1, 1)
 
+    def get_time_offset(self):
+        """
+        Corrects for time offset from skipping the first row of the data files, which contain
+        zero displacement, to avoid singularities in the SPM t-statistic. Because of this skip
+        all time is offset proportionally to the number of rows skipped.
+
+        This function assumes the standard 1kHz TMG sample rate, so each row is one millisecond
+        """
+        return self.start_row
     # -----------------------------------------------------------------------------
     # END SPM SIGNAL PROCESSING FUNCTIONS
     # -----------------------------------------------------------------------------
@@ -564,6 +542,9 @@ class MCModulationInterface:
     # END DATA SHAPE ACCOMODATION FUNCTIONS
     # -----------------------------------------------------------------------------
 
+    # -----------------------------------------------------------------------------
+    # START ANALYSIS AND EXPORT FUNCTIONS
+    # -----------------------------------------------------------------------------
     def is_import_data_null(self):
         """
         Used as a null check for imported data
@@ -584,6 +565,97 @@ class MCModulationInterface:
             return True
         else:
             return False
+
+    def get_ti(self):
+        """
+        Returns the spm.t and spm.ti objects resulting from an SMP t test between
+        the currently loaded baseline and potentiated data
+        """
+        try:
+            # t = spm1d.stats.ttest2(self.baseline_data.T, self.pot_data.T, equal_var=False)
+            t = spm1d.stats.ttest2(self.pot_data.T, self.baseline_data.T, equal_var=False)
+            ti = t.inference(alpha=0.05, two_tailed=False, interp=True)
+            return t, ti
+        except Exception as e:
+            print("Error performing SPM analysis: " + str(e))
+            return
+
+    def plot_test_results(self):
+        """
+        Returns the spm.t and spm.ti objects resulting from a single-tailed SMP inference test between
+        the currently loaded baseline and potentiated data
+        """
+        try:
+            t, ti = self.get_ti()  # try getting t an ti objects
+        except Exception as e:
+            print("Error performing SPM analysis: " + str(e))
+            return
+
+        self.set_imported_data_description(self.spm_text_area, self.export_spm_params(ti))
+
+        num_points = np.shape(self.pot_data)[0]  # could also use base_data
+        time = np.linspace(0, num_points - 1, num_points) + self.get_time_offset()  # include time offset
+
+        pot_mean = np.mean(self.pot_data, axis=1)
+        base_mean = np.mean(self.baseline_data, axis=1)
+        pot_sd = np.std(self.pot_data, ddof=1)
+        base_sd = np.std(self.baseline_data, ddof=1)
+
+        # plt.fill_between(x, y-error, y+error)
+
+        fig, axes = plt.subplots(1, 2, figsize=(7, 4))
+
+        # plot TMG measurement
+        ax = axes[0]
+        ax.set_xlabel("Time [ms]")
+        ax.set_ylabel("Position [mm]")
+
+        ax.plot(time, pot_mean, label="Potentiated")
+        ax.plot(time, base_mean, label="Baseline")
+        ax.fill_between(time, pot_mean - pot_sd, pot_mean + pot_sd)  # standard deviation clouds
+        ax.fill_between(time, base_mean - base_sd, base_mean + base_sd)  # standard deviation clouds
+
+        ax.axhline(y=0, color='k', linestyle=':')  # dashed line at y = 0
+        ax.legend()
+
+        # plot SPM results:
+        ax = axes[1]
+        ax.set_xlabel("Time [ms]")
+        ax.set_ylabel("SPM T Statistic")
+
+        # start index --- careful with time offset
+
+        z = t.z  # t statistic
+        ax.plot(time, z, color="#000000")  # plot t-curve
+        ax.axhline(y=0, color='k', linestyle=':')  # dashed line at y = 0
+        ax.axhline(y=ti.zstar, color='k', linestyle='--')  # dashed line at t threshold
+        ax.text(73, ti.zstar + 0.4, "$\\alpha = {:.2f}$\n$t^* = {:.2f}$".format(ti.alpha, ti.zstar),
+                va='bottom', ha='left', bbox=dict(facecolor='#FFFFFF', edgecolor='#222222', boxstyle='round,pad=0.3'))
+
+        # add shading between t curve and threshold value
+        clusters = ti.clusters  # portions of t curve above threshold value
+        if clusters is not None:  # don't shade if threshold never exceeded
+            for i, cluster in enumerate(clusters):  # loop through significance clusters
+                tstart, tend = cluster.endpoints # start and end time of each cluster
+                tstart += self.get_time_offset()
+                tend += self.get_time_offset()
+
+                # find inidices of time array that most closely match start and end times
+                start_index = np.argmin(np.abs(time - tstart))
+                end_index = np.argmin(np.abs(time - tend))
+
+                # ax.fill_between(time[start_index:end_index], z[start_index:end_index], ti.zstar, interpolate=True)  # shade between curve and threshold
+                fill_time = np.linspace(tstart, tend, end_index-start_index)
+                fill_z = z[start_index:end_index]
+                fill_z[0] = ti.zstar  # force endpoints into threshold
+                fill_z[-1] = ti.zstar
+                ax.fill_between(fill_time, fill_z, ti.zstar, interpolate=True)  # shade between curve and threshold
+
+        # ti.plot_threshold_label(fontsize=10, color='black')
+        # ti.plot_p_values(size=10)  # offsets=[(0, 0.3)]
+
+        plt.tight_layout()
+        plt.show()
 
     def run_two_sample_test(self, base_data, pot_data, x_label="Independent Variable", y_label="Dependent Variable"):
         """
@@ -627,36 +699,8 @@ class MCModulationInterface:
         # ti.plot_p_values(size=10)  # offsets=[(0, 0.3)]
         ax.set_xlabel(x_label)
         plt.show()
-
     # -----------------------------------------------------------------------------
-    # START GRAPH UPDATE FUNCTIONS
-    # -----------------------------------------------------------------------------
-    def plot_threshold(self, ax, threshold, alpha):
-        """
-        Plots threshold t-statistic value and corresponding alpha value on the inputted axis
-        :param ax: matplotlib.axes._axes.Axes object
-        :param threshold: threshold t-statistic value
-        :param alpha: alpha value for t test
-        """
-
-    def update_spm_graph(self, t, ti):
-        t_star = ti.zstar
-        p = ti.p
-
-        self.spm_subplot.clear()  # clear data
-        self.spm_subplot.plot(t.z)  # plot data
-        self.spm_fig.canvas.draw()  # updates the graph
-
-    def update_signal_graph(self, base_data, pot_data):
-        baseline_mean = np.mean(base_data, axis=1) # column average of baseline data
-        potentiated_mean = np.mean(pot_data, axis=1)  # column average of baseline data
-
-        self.signal_subplot.clear()  # clear data
-        self.signal_subplot.plot(baseline_mean, label='baseline')  # plot data
-        self.signal_subplot.plot(potentiated_mean, label='potentiated')  # plot data
-        self.signal_fig.canvas.draw()  # updates the graph
-    # -----------------------------------------------------------------------------
-    # END GRAPH UPDATE FUNCTIONS
+    # END ANALYSIS AND EXPORT FUNCTIONS
     # -----------------------------------------------------------------------------
 
 
@@ -680,6 +724,6 @@ def development_launch():
 
 
 if __name__ == "__main__":
-    gui_launch()
-    # development_launch()
+    # gui_launch()
+    development_launch()
     # practice()
