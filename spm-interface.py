@@ -603,10 +603,11 @@ class MCModulationInterface:
 
         # plt.fill_between(x, y-error, y+error)
 
-        fig, axes = plt.subplots(1, 2, figsize=(7, 4))
+        fig, axes = plt.subplots(1, 2, figsize=(8, 4))
 
         # plot TMG measurement
         ax = axes[0]
+        self.remove_spines(ax)
         ax.set_xlabel("Time [ms]")
         ax.set_ylabel("Position [mm]")
 
@@ -620,42 +621,30 @@ class MCModulationInterface:
 
         # plot SPM results:
         ax = axes[1]
+        self.remove_spines(ax)
         ax.set_xlabel("Time [ms]")
         ax.set_ylabel("SPM T Statistic")
 
-        # start index --- careful with time offset
-
-        z = t.z  # t statistic
-        ax.plot(time, z, color="#000000")  # plot t-curve
+        ax.plot(time, t.z, marker='.', color="#000000")  # plot t-curve
         ax.axhline(y=0, color='k', linestyle=':')  # dashed line at y = 0
         ax.axhline(y=ti.zstar, color='k', linestyle='--')  # dashed line at t threshold
         ax.text(73, ti.zstar + 0.4, "$\\alpha = {:.2f}$\n$t^* = {:.2f}$".format(ti.alpha, ti.zstar),
                 va='bottom', ha='left', bbox=dict(facecolor='#FFFFFF', edgecolor='#222222', boxstyle='round,pad=0.3'))
 
+        ax.fill_between(time, t.z, ti.zstar, where=t.z >= ti.zstar, interpolate=True)  # shade between curve and threshold
+
         # add shading between t curve and threshold value
-        clusters = ti.clusters  # portions of t curve above threshold value
-        if clusters is not None:  # don't shade if threshold never exceeded
-            for i, cluster in enumerate(clusters):  # loop through significance clusters
-                tstart, tend = cluster.endpoints # start and end time of each cluster
-                tstart += self.get_time_offset()
-                tend += self.get_time_offset()
-
-                # find inidices of time array that most closely match start and end times
-                start_index = np.argmin(np.abs(time - tstart))
-                end_index = np.argmin(np.abs(time - tend))
-
-                # ax.fill_between(time[start_index:end_index], z[start_index:end_index], ti.zstar, interpolate=True)  # shade between curve and threshold
-                fill_time = np.linspace(tstart, tend, end_index-start_index)
-                fill_z = z[start_index:end_index]
-                fill_z[0] = ti.zstar  # force endpoints into threshold
-                fill_z[-1] = ti.zstar
-                ax.fill_between(fill_time, fill_z, ti.zstar, interpolate=True)  # shade between curve and threshold
-
-        # ti.plot_threshold_label(fontsize=10, color='black')
-        # ti.plot_p_values(size=10)  # offsets=[(0, 0.3)]
 
         plt.tight_layout()
         plt.show()
+
+    @staticmethod
+    def remove_spines(ax):
+        """ Simple auxiliary function to remove upper and right spines from the passed axis"""
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.get_xaxis().tick_bottom()
+        ax.get_yaxis().tick_left()
 
     def run_two_sample_test(self, base_data, pot_data, x_label="Independent Variable", y_label="Dependent Variable"):
         """
@@ -717,9 +706,9 @@ def gui_launch():
 
 def development_launch():
     # load data programatically for development use
-    data_dir = "/Users/ejmastnak/Documents/Dropbox/projects-and-products/tmg-bmc/spm/spm-measurements/spm_1_9_2020/em/"
-    base_filename = data_dir + "em_base.csv"
-    pot_filename = data_dir + "em_pot.csv"
+    data_dir = "/Users/ejmastnak/Documents/Dropbox/projects-and-products/tmg-bmc/spm/spm-measurements/spm_1_9_2020/sd/"
+    base_filename = data_dir + "sd_base.csv"
+    pot_filename = data_dir + "sd_pot.csv"
     interface = MCModulationInterface(base_filename=base_filename, pot_filename=pot_filename)
 
 
