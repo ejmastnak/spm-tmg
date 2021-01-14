@@ -4,7 +4,7 @@ from matplotlib import pyplot as plt
 from pathlib import Path
 import os
 import traceback
-from tkinter import *
+import tkinter as tk
 from tkinter import ttk
 from tkinter import filedialog
 import numpy as np
@@ -19,6 +19,9 @@ class MCModulationInterface:
         :param base_filename:
         :param pot_filename:
         """
+        self.BASE_POT = "BASE_POT"
+        self.BASE_INJ = "BASE_INJ"
+        self.mode = self.BASE_POT  # "BASE_POT" or "BASE_INJ" for comparing baseline to either potentiated or injured
 
         self.baseline_filename = ""  # name of file holding baseline data
         self.potentiated_filename = ""  # name of file holding potentiated data
@@ -31,81 +34,90 @@ class MCModulationInterface:
         self.position_offset = 0.0
         self.normalize = False
 
-        self.root = Tk()
-        self.root.title("SPM 1D Analysis Interface")
+        self.root_window = tk.Tk()
+        self.root_window.title("SPM 1D Analysis Interface")
 
         # create frames here
-        self.rootframe = ttk.Frame(self.root, padding=(3, 12, 3, 12))
-        self.controlframe = ttk.Frame(self.rootframe) # panel to hold controls
-        self.graphframe = ttk.Frame(self.rootframe) # panel to hold graph
+        self.rootframe = ttk.Frame(self.root_window, padding=(3, 12, 3, 12))
+        self.textarea_frame = ttk.Frame(self.rootframe)  # panel to hold text areas
+        self.controlframe = ttk.Frame(self.rootframe)  # panel to hold controls
+
+        # Baseline data window
+        self.baseline_label = ttk.Label(self.textarea_frame, text="Baseline Data")
+        self.baseline_scroll = ttk.Scrollbar(self.textarea_frame)
+        self.baseline_text_area = tk.Text(self.textarea_frame, height=5, width=52)
+        self.baseline_scroll.config(command=self.baseline_text_area.yview)
+        self.baseline_text_area.config(yscrollcommand=self.baseline_scroll.set)
+        self.baseline_text_area.insert(tk.END, "No data imported")
+        self.baseline_text_area.configure(state='disabled')
+
+        # Potentiated data window
+        self.potentiated_label = ttk.Label(self.textarea_frame, text="{} Data".format(self.get_mode_name()))
+        self.potentiated_scroll = ttk.Scrollbar(self.textarea_frame)
+        self.potentiated_text_area = tk.Text(self.textarea_frame, height=5, width=52)
+        self.potentiated_scroll.config(command=self.potentiated_text_area.yview)
+        self.potentiated_text_area.config(yscrollcommand=self.potentiated_scroll.set)
+        self.potentiated_text_area.insert(tk.END, "No data imported")
+        self.potentiated_text_area.configure(state='disabled')
+
+        # SPM analysis results window
+        self.spm_label = ttk.Label(self.textarea_frame, text="SPM Analysis Results")
+        self.spm_scroll = ttk.Scrollbar(self.textarea_frame)
+        self.spm_text_area = tk.Text(self.textarea_frame, height=7, width=52)
+        self.spm_scroll.config(command=self.spm_text_area.yview)
+        self.spm_text_area.config(yscrollcommand=self.spm_scroll.set)
+        self.spm_text_area.insert(tk.END, "No analysis results")
+        self.spm_text_area.configure(state='disabled')
 
         # create control widgets
-        self.import_potentiated_button = ttk.Button(self.controlframe, text="Import Potentiated Data", command=self.import_potentiated)
+        self.modebox_var = tk.StringVar()
+        self.mode_combobox = ttk.Combobox(self.controlframe, state='readonly', textvariable=self.modebox_var)
+        self.mode_combobox['values'] = ('Baseline-Potentiated', "Baseline-Atrophied")
+        if self.mode == self.BASE_POT: self.mode_combobox.current(0)
+        else: self.mode_combobox.current(1)
+        self.mode_combobox.bind("<<ComboboxSelected>>", self.change_mode)
+
+        # TODO
+        self.import_potentiated_button = ttk.Button(self.controlframe, text="Import {} Data".format(self.get_mode_name()), command=self.import_potentiated)
         self.import_baseline_button = ttk.Button(self.controlframe, text="Import Baseline Data", command=self.import_baseline)
         self.compare_button = ttk.Button(self.controlframe, text="Compare", command=self.compare)
         self.export_curve_button = ttk.Button(self.controlframe, text="Export t Curve", command=self.export_tcurve)
         self.export_params_button = ttk.Button(self.controlframe, text="Export t Parameters", command=self.export_tparams)
         self.close_button = ttk.Button(self.controlframe, text="Exit", command=self.close)
 
-        # Baseline data window
-        self.baseline_label = ttk.Label(self.controlframe, text="Baseline Data")
-        self.baseline_scroll = ttk.Scrollbar(self.controlframe)
-        self.baseline_text_area = Text(self.controlframe, height=5, width=52)
-        self.baseline_scroll.config(command=self.baseline_text_area.yview)
-        self.baseline_text_area.config(yscrollcommand=self.baseline_scroll.set)
-        self.baseline_text_area.insert(END, "No data imported")
-        self.baseline_text_area.configure(state='disabled')
+        # gridding subframes
+        self.rootframe.grid(column=0, row=0, sticky=(tk.N, tk.S, tk.E, tk.W))  # place the root frame
 
-        # Potentiated data window
-        self.potentiated_label = ttk.Label(self.controlframe, text="Potentiated Data")
-        self.potentiated_scroll = ttk.Scrollbar(self.controlframe)
-        self.potentiated_text_area = Text(self.controlframe, height=5, width=52)
-        self.potentiated_scroll.config(command=self.potentiated_text_area.yview)
-        self.potentiated_text_area.config(yscrollcommand=self.potentiated_scroll.set)
-        self.potentiated_text_area.insert(END, "No data imported")
-        self.potentiated_text_area.configure(state='disabled')
+        self.textarea_frame.grid(column=0, row=0, sticky=(tk.N, tk.S, tk.E, tk.W))  # place textarea frame
+        self.controlframe.grid(column=0, row=1, sticky=(tk.N, tk.S, tk.E, tk.W))  # place control frame
 
-        # SPM analysis results window
-        self.spm_label = ttk.Label(self.controlframe, text="SPM Analysis Results")
-        self.spm_scroll = ttk.Scrollbar(self.controlframe)
-        self.spm_text_area = Text(self.controlframe, height=7, width=52)
-        self.spm_scroll.config(command=self.spm_text_area.yview)
-        self.spm_text_area.config(yscrollcommand=self.spm_scroll.set)
-        self.spm_text_area.insert(END, "No analysis results")
-        self.spm_text_area.configure(state='disabled')
-
-        # gridding widgets
-        self.rootframe.grid(column=0, row=0, sticky=(N, S, E, W)) # place the root frame
-
-        self.graphframe.grid(column=0, row=0, sticky=(N, S, E, W)) # place graph frame
-        self.controlframe.grid(column=1, row=0, sticky=(N, S, E, W)) # place control frame
-
-        # gridding control panel
+        # gridding text area frame
         self.baseline_label.grid(column=0, row=1)
-        self.baseline_scroll.grid(column=1, row=2, sticky=W)
-        self.baseline_text_area.grid(column=0, row=2, sticky=W)
+        self.baseline_scroll.grid(column=1, row=2, sticky=tk.W)
+        self.baseline_text_area.grid(column=0, row=2, sticky=tk.W)
 
         self.potentiated_label.grid(column=0, row=3)
-        self.potentiated_scroll.grid(column=1, row=4, sticky=W)
-        self.potentiated_text_area.grid(column=0, row=4, sticky=W)
+        self.potentiated_scroll.grid(column=1, row=4, sticky=tk.W)
+        self.potentiated_text_area.grid(column=0, row=4, sticky=tk.W)
 
         self.spm_label.grid(column=0, row=5)
-        self.spm_scroll.grid(column=1, row=6, sticky=W)
-        self.spm_text_area.grid(column=0, row=6, sticky=W)
+        self.spm_scroll.grid(column=1, row=6, sticky=tk.W)
+        self.spm_text_area.grid(column=0, row=6, sticky=tk.W)
 
-        self.import_baseline_button.grid(column=0, row=7, sticky=W)
-        self.import_potentiated_button.grid(column=0, row=8, sticky=W)
-        self.compare_button.grid(column=0, row=9, sticky=W)
-        self.export_curve_button.grid(column=0, row=10, sticky=W)
-        self.export_params_button.grid(column=0, row=11, sticky=W)
-        self.close_button.grid(column=0, row=12, sticky=W)
+        # gridding control frame
+        self.mode_combobox.grid(column=0, row=0, sticky=tk.W)
+        self.import_baseline_button.grid(column=0, row=1, sticky=tk.W)
+        self.import_potentiated_button.grid(column=0, row=2, sticky=tk.W)
+        self.compare_button.grid(column=0, row=3, sticky=tk.W)
+        self.export_curve_button.grid(column=0, row=4, sticky=tk.W)
+        self.export_params_button.grid(column=0, row=5, sticky=tk.W)
+        self.close_button.grid(column=0, row=6, sticky=tk.W)
 
         # configure weights
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
+        self.root_window.columnconfigure(0, weight=1)
+        self.root_window.rowconfigure(0, weight=1)
 
         self.rootframe.columnconfigure(0, weight=1)  # control frame
-        self.rootframe.columnconfigure(1, weight=2)  # graph frame
         self.rootframe.rowconfigure(0, weight=1)
 
         # for loading data programtically (and not via gui) when testing
@@ -113,7 +125,7 @@ class MCModulationInterface:
             self.set_baseline_data(base_filename)
             self.set_potentiated_data(pot_filename)
 
-        self.root.mainloop()
+        self.root_window.mainloop()
 
     @ staticmethod
     def get_data_description(filename, data):
@@ -131,6 +143,30 @@ class MCModulationInterface:
         dim_string_2 = "({} measurements of {} points per measurement)".format(data.shape[1], data.shape[0])
         path_string = "Location: " + os.path.dirname(filename)
         return file_string + "\n" + dim_string_1 + "\n" + dim_string_2 + "\n" + path_string
+
+    @ staticmethod
+    def set_imported_data_description(text_widget, text_content):
+        """
+        Wrapper method for protocol of setting data text widget info content
+        Used with to give the user a description of the data they've imported
+        And to give an overview of SPM analysis results
+        :param text_widget:
+        :param text_content:
+        :return:
+        """
+        text_widget.configure(state='normal')
+        text_widget.delete('1.0', tk.END)
+        text_widget.insert(tk.END, text_content)
+        text_widget.configure(state='disabled')
+
+    def get_mode_name(self):
+        if self.mode == self.BASE_POT:
+            return "Potentiated"
+        elif self.mode == self.BASE_INJ:
+            return "Antrophied"
+        else:  # should never happen
+            print("Error: Unidentified mode: {}".format(self.mode))
+            return "Potentiated"
 
     def export_spm_params(self, ti):
         """
@@ -177,24 +213,28 @@ class MCModulationInterface:
                 analysis_string += cluster_string
         return analysis_string
 
-    @ staticmethod
-    def set_imported_data_description(text_widget, text_content):
-        """
-        Wrapper method for protocol of setting data text widget info content
-        Used with to give the user a description of the data they've imported
-        And to give an overview of SPM analysis results
-        :param text_widget:
-        :param text_content:
-        :return:
-        """
-        text_widget.configure(state='normal')
-        text_widget.delete('1.0', END)
-        text_widget.insert(END, text_content)
-        text_widget.configure(state='disabled')
-
     # -----------------------------------------------------------------------------
     # START GUI WIDGET ACTION FUNCTIONS
     # -----------------------------------------------------------------------------
+    def change_mode(self, event):
+        if "Potentiated" in self.modebox_var.get():
+            if self.mode == self.BASE_POT:  # if already in BASE-POT mode
+                return  # exit and avoid unnecessary updates
+            else:
+                self.mode = self.BASE_POT
+                self.update_mode_labels()
+        else:  # "Atrophied" in self.modebox_var.get():
+            if self.mode == self.BASE_INJ:  # if already in BASE_INJ-POT mode
+                return  # exit and avoid unnecessary updates
+            else:
+                self.mode = self.BASE_INJ
+                self.update_mode_labels()
+
+    def update_mode_labels(self):
+        """ Changes labels between Potentiated and Atrophied """
+        self.import_potentiated_button['text'] = "Import {} Data".format(self.get_mode_name())
+        self.potentiated_label['text'] = "Import {} Data".format(self.get_mode_name())
+
     def import_baseline(self):
         """
         Action for the import_baseline_button widget.
@@ -378,8 +418,8 @@ class MCModulationInterface:
         Action for the close button widget.
         Closes the current SPM window and exits the program
         """
-        self.root.destroy()
-        sys.exit()
+        self.root_window.destroy()
+        tk.sys.exit()
     # -----------------------------------------------------------------------------
     # END GUI WIDGET ACTION FUNCTIONS
     # -----------------------------------------------------------------------------
@@ -615,7 +655,7 @@ class MCModulationInterface:
         ax.set_xlabel("Time [ms]")
         ax.set_ylabel("Position [mm]")
 
-        ax.plot(time, pot_mean, label="Potentiated")
+        ax.plot(time, pot_mean, label=self.get_mode_name())
         ax.plot(time, base_mean, label="Baseline")
         ax.fill_between(time, pot_mean - pot_sd, pot_mean + pot_sd)  # standard deviation clouds
         ax.fill_between(time, base_mean - base_sd, base_mean + base_sd)  # standard deviation clouds
@@ -673,7 +713,7 @@ class MCModulationInterface:
         plt.figure(figsize=(8, 3.5))
         ax = plt.axes((0.1, 0.15, 0.35, 0.8))
 
-        spm1d.plot.plot_mean_sd(pot_data, label="Potentiated", linecolor='r', facecolor='r')
+        spm1d.plot.plot_mean_sd(pot_data, label=self.get_mode_name(), linecolor='r', facecolor='r')
         spm1d.plot.plot_mean_sd(base_data, label="Baseline")
 
         ax.axhline(y=0, color='k', linestyle=':')
