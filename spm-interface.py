@@ -132,8 +132,7 @@ class MCModulationInterface:
         path_string = "Location: " + os.path.dirname(filename)
         return file_string + "\n" + dim_string_1 + "\n" + dim_string_2 + "\n" + path_string
 
-    @ staticmethod
-    def export_spm_params(ti):
+    def export_spm_params(self, ti):
         """
         Used to get a string description of an SPM two-sample t-test
 
@@ -156,6 +155,8 @@ class MCModulationInterface:
         if clusters is not None:
             for i, cluster in enumerate(clusters):
                 tstart, tend = cluster.endpoints  # start and end time of each cluster
+                tstart += self.get_time_offset()  # add potential time offset
+                tend += self.get_time_offset()
                 x, z = cluster._X, cluster._Z  # x and z (time and t-statistic) coordinates of the cluster
                 z_max = np.max(z)  # max value of t-statistic in this cluster
                 N = len(x)  # number of points in this cluster
@@ -169,7 +170,7 @@ class MCModulationInterface:
                 cluster_string += "\nProbability: {:.2e}".format(cluster.P)
                 cluster_string += "\nProbability (decimal): {:.4f}".format(cluster.P)
                 cluster_string += "\nStart: {:.2f}\t End: {:.2f}".format(tstart, tend)
-                cluster_string += "\nCentroid: ({:.2f}, {:.2f})".format(cluster.centroid[0], cluster.centroid[1])
+                cluster_string += "\nCentroid: ({:.2f}, {:.2f})".format(cluster.centroid[0] + self.get_time_offset(), cluster.centroid[1])
                 cluster_string += "\nMaximum: {:.2f}".format(z_max)
                 cluster_string += "\nArea Above Threshold: {:.2f}".format(A_threshold)
                 cluster_string += "\nArea Above x Axis: {:.2f}".format(A)
@@ -257,7 +258,7 @@ class MCModulationInterface:
         if base_cols == 1 and pot_cols == 1:
             self.increase_cols(base_rows, base_cols, pot_rows, pot_cols)
 
-        # TODO change back to default after development
+        # TODO development vs GUI launch
         self.plot_test_results()
         # self.run_two_sample_test(self.baseline_data.T, self.pot_data.T, x_label="Time [ms]", y_label="Position [mm]")
 
@@ -277,7 +278,8 @@ class MCModulationInterface:
                 return
             if not filename.endswith(".csv"):  # append .csv extension, unless user has done so manually
                 filename += ".csv"
-            time = np.linspace(0, len(t.z)-1, len(t.z)) + self.start_row  # assumes 1 kHz sampling, i.e. 1ms per sample
+            time = np.arange(0, len(t.z), 1)  # assumes 1 kHz sampling, i.e. 1ms per sample. Time reads 0, 1, 2, ...
+            time += self.get_time_offset()  # add potential time offset
             header = "Time [ms], SPM t-statistic"
             np.savetxt(filename, np.column_stack([time, t.z]), delimiter=',', header=header)
         except Exception as e:
@@ -302,12 +304,12 @@ class MCModulationInterface:
                 filename += ".csv"
 
             # Print file header
-            metadata = "# Start header\n"
-            metadata += "Baseline file,{}\n".format(Path(self.baseline_filename).name)
-            metadata += "Potentiated file,{}\n".format(Path(self.potentiated_filename).name)
-            metadata += "Alpha,{:.2f}\n".format(ti.alpha)  # alpha value
-            metadata += "Threshold,{:.2f}\n".format(ti.zstar)  # threshold t-statistic value
-            metadata += "# End header\n"
+            metadata = "# START HEADER\n"
+            metadata += "# Baseline file,{}\n".format(Path(self.baseline_filename).name)
+            metadata += "# Potentiated file,{}\n".format(Path(self.potentiated_filename).name)
+            metadata += "# Alpha,{:.2f}\n".format(ti.alpha)  # alpha value
+            metadata += "# Threshold,{:.2f}\n".format(ti.zstar)  # threshold t-statistic value
+            metadata += "# END HEADER\n"
 
             with open(filename, 'w') as output:  # open file for writing
                 output.write(metadata)  # write metadata
@@ -329,9 +331,9 @@ class MCModulationInterface:
                     # Assign each outputted parameter a row; pack into an array for easier printing to file
                     param_strs = ["Probability",  # probability for threshold in exponent (scientific) notation
                                   "Probability (decimal)",  # probability as a float
-                                  "Start",
-                                  "End",
-                                  "Centroid Time",
+                                  "Start Time [ms]",
+                                  "End Time [ms]",
+                                  "Centroid Time [ms]",
                                   "Centroid t-value",
                                   "Maximum",
                                   "Area Above Threshold",
@@ -339,6 +341,9 @@ class MCModulationInterface:
 
                     for i, cluster in enumerate(clusters):  # loop through significance clusters
                         tstart, tend = cluster.endpoints  # start and end time of each cluster
+                        tstart += self.get_time_offset()  # add potential time offset
+                        tend += self.get_time_offset()
+
                         x, z = cluster._X, cluster._Z  # x and z (time and t-statistic) coordinates of the cluster
                         z_max = np.max(z)  # max value of t-statistic in this cluster
                         N = len(x)  # number of points in this cluster
@@ -351,7 +356,7 @@ class MCModulationInterface:
                         param_strs[1] += ",{:.4f}".format(cluster.P)
                         param_strs[2] += ",{:.2f}".format(tstart)
                         param_strs[3] += ",{:.2f}".format(tend)
-                        param_strs[4] += ",{:.2f}".format(cluster.centroid[0])
+                        param_strs[4] += ",{:.2f}".format(cluster.centroid[0] + self.get_time_offset())
                         param_strs[5] += ",{:.2f}".format(cluster.centroid[1])
                         param_strs[6] += ",{:.2f}".format(z_max)
                         param_strs[7] += ",{:.2f}".format(A_threshold)
@@ -365,6 +370,7 @@ class MCModulationInterface:
 
         except Exception as e:
             print("Error exporting SPM parameters: " + str(e))
+            traceback.print_exception(type(e), e, e.__traceback__)
             return
 
     def close(self):
@@ -582,8 +588,8 @@ class MCModulationInterface:
 
     def plot_test_results(self):
         """
-        Returns the spm.t and spm.ti objects resulting from a single-tailed SMP inference test between
-        the currently loaded baseline and potentiated data
+        Plots the baseline and potentiated data's mean and standard deviation clouds on axis one
+        Plots the SPM t-test between the baseline and potentiated data on axis two
         """
         try:
             t, ti = self.get_ti()  # try getting t an ti objects
@@ -600,8 +606,6 @@ class MCModulationInterface:
         base_mean = np.mean(self.baseline_data, axis=1)
         pot_sd = np.std(self.pot_data, ddof=1)
         base_sd = np.std(self.baseline_data, ddof=1)
-
-        # plt.fill_between(x, y-error, y+error)
 
         fig, axes = plt.subplots(1, 2, figsize=(8, 4))
 
@@ -625,15 +629,13 @@ class MCModulationInterface:
         ax.set_xlabel("Time [ms]")
         ax.set_ylabel("SPM T Statistic")
 
-        ax.plot(time, t.z, marker='.', color="#000000")  # plot t-curve
+        ax.plot(time, t.z, color="#000000")  # plot t-curve
         ax.axhline(y=0, color='k', linestyle=':')  # dashed line at y = 0
         ax.axhline(y=ti.zstar, color='k', linestyle='--')  # dashed line at t threshold
         ax.text(73, ti.zstar + 0.4, "$\\alpha = {:.2f}$\n$t^* = {:.2f}$".format(ti.alpha, ti.zstar),
                 va='bottom', ha='left', bbox=dict(facecolor='#FFFFFF', edgecolor='#222222', boxstyle='round,pad=0.3'))
 
         ax.fill_between(time, t.z, ti.zstar, where=t.z >= ti.zstar, interpolate=True)  # shade between curve and threshold
-
-        # add shading between t curve and threshold value
 
         plt.tight_layout()
         plt.show()
