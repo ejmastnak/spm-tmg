@@ -10,6 +10,11 @@ from tkinter import filedialog
 import numpy as np
 import spm1d
 
+plt.rcParams['mathtext.fontset'] = 'cm'
+plt.rcParams['font.family'] = 'STIXGeneral'
+plt.rc('axes', labelsize=12)    # fontsize of the x and y labels
+plt.rc('axes', titlesize=16)    # fontsize of titles
+
 
 class MCModulationInterface:
 
@@ -20,20 +25,35 @@ class MCModulationInterface:
         :param pot_filename:
         """
         self.BASE_POT = "BASE_POT"
-        self.BASE_INJ = "BASE_INJ"
+        self.BASE_ATRO = "BASE_INJ"
         self.mode = self.BASE_POT  # "BASE_POT" or "BASE_INJ" for comparing baseline to either potentiated or injured
 
         self.baseline_filename = ""  # name of file holding baseline data
-        self.potentiated_filename = ""  # name of file holding potentiated data
+        self.active_filename = ""  # name of file holding potentiated data
         self.baseline_data = np.zeros(shape=(0, 0))  # e.g. 1000 x 10
-        self.pot_data = np.zeros(shape=(0, 0))  # e.g. 1000 x 10
-
+        self.active_data = np.zeros(shape=(0, 0))  # e.g. 1000 x 10
         self.new_data = True
+
+        # START COLORS
+        self.base_color = "#000000"  # black
+        self.pot_color = "#dd502d"  # orange
+        self.atroph_color = "#3997bf"  # blue
+        self.base_alpha = 0.20
+        self.active_alpha = 0.75
+
+        self.tline_color = "#000000"  # black
+        self.tpotfill_color = "#7e3728"  # light orange
+        self.tatrophfill_color = "#244d90"  # light blue
+        # END COLORS
+
+        # START DATA PROCESSING PARAMETERS
         self.start_row = 1  # csv data file row at which to begin reading data (0-indexed)
         self.max_rows = 100  # number of rows to read after start_row is reached
         self.position_offset = 0.0
         self.normalize = False
+        # END DATA PROCESSING PARAMETERS
 
+        # START TKINTER WIDGETS
         self.root_window = tk.Tk()
         self.root_window.title("SPM 1D Analysis Interface")
 
@@ -51,14 +71,14 @@ class MCModulationInterface:
         self.baseline_text_area.insert(tk.END, "No data imported")
         self.baseline_text_area.configure(state='disabled')
 
-        # Potentiated data window
-        self.potentiated_label = ttk.Label(self.textarea_frame, text="{} Data".format(self.get_mode_name()))
-        self.potentiated_scroll = ttk.Scrollbar(self.textarea_frame)
-        self.potentiated_text_area = tk.Text(self.textarea_frame, height=5, width=52)
-        self.potentiated_scroll.config(command=self.potentiated_text_area.yview)
-        self.potentiated_text_area.config(yscrollcommand=self.potentiated_scroll.set)
-        self.potentiated_text_area.insert(tk.END, "No data imported")
-        self.potentiated_text_area.configure(state='disabled')
+        # Active data window
+        self.active_label = ttk.Label(self.textarea_frame, text="{} Data".format(self.get_mode_name()))
+        self.active_scroll = ttk.Scrollbar(self.textarea_frame)
+        self.active_text_area = tk.Text(self.textarea_frame, height=5, width=52)
+        self.active_scroll.config(command=self.active_text_area.yview)
+        self.active_text_area.config(yscrollcommand=self.active_scroll.set)
+        self.active_text_area.insert(tk.END, "No data imported")
+        self.active_text_area.configure(state='disabled')
 
         # SPM analysis results window
         self.spm_label = ttk.Label(self.textarea_frame, text="SPM Analysis Results")
@@ -72,13 +92,12 @@ class MCModulationInterface:
         # create control widgets
         self.modebox_var = tk.StringVar()
         self.mode_combobox = ttk.Combobox(self.controlframe, state='readonly', textvariable=self.modebox_var)
-        self.mode_combobox['values'] = ('Baseline-Potentiated', "Baseline-Atrophied")
+        self.mode_combobox['values'] = ('Baseline-Potentiated Mode', "Baseline-Atrophied Mode")
         if self.mode == self.BASE_POT: self.mode_combobox.current(0)
         else: self.mode_combobox.current(1)
         self.mode_combobox.bind("<<ComboboxSelected>>", self.change_mode)
 
-        # TODO
-        self.import_potentiated_button = ttk.Button(self.controlframe, text="Import {} Data".format(self.get_mode_name()), command=self.import_potentiated)
+        self.import_active_button = ttk.Button(self.controlframe, text="Import {} Data".format(self.get_mode_name()), command=self.import_active)
         self.import_baseline_button = ttk.Button(self.controlframe, text="Import Baseline Data", command=self.import_baseline)
         self.compare_button = ttk.Button(self.controlframe, text="Compare", command=self.compare)
         self.export_curve_button = ttk.Button(self.controlframe, text="Export t Curve", command=self.export_tcurve)
@@ -96,9 +115,9 @@ class MCModulationInterface:
         self.baseline_scroll.grid(column=1, row=2, sticky=tk.W)
         self.baseline_text_area.grid(column=0, row=2, sticky=tk.W)
 
-        self.potentiated_label.grid(column=0, row=3)
-        self.potentiated_scroll.grid(column=1, row=4, sticky=tk.W)
-        self.potentiated_text_area.grid(column=0, row=4, sticky=tk.W)
+        self.active_label.grid(column=0, row=3)
+        self.active_scroll.grid(column=1, row=4, sticky=tk.W)
+        self.active_text_area.grid(column=0, row=4, sticky=tk.W)
 
         self.spm_label.grid(column=0, row=5)
         self.spm_scroll.grid(column=1, row=6, sticky=tk.W)
@@ -107,7 +126,7 @@ class MCModulationInterface:
         # gridding control frame
         self.mode_combobox.grid(column=0, row=0, sticky=tk.W)
         self.import_baseline_button.grid(column=0, row=1, sticky=tk.W)
-        self.import_potentiated_button.grid(column=0, row=2, sticky=tk.W)
+        self.import_active_button.grid(column=0, row=2, sticky=tk.W)
         self.compare_button.grid(column=0, row=3, sticky=tk.W)
         self.export_curve_button.grid(column=0, row=4, sticky=tk.W)
         self.export_params_button.grid(column=0, row=5, sticky=tk.W)
@@ -123,9 +142,10 @@ class MCModulationInterface:
         # for loading data programtically (and not via gui) when testing
         if base_filename is not None and pot_filename is not None:
             self.set_baseline_data(base_filename)
-            self.set_potentiated_data(pot_filename)
+            self.set_active_data(pot_filename)
 
         self.root_window.mainloop()
+        # END TKINTER WIDGETS
 
     @ staticmethod
     def get_data_description(filename, data):
@@ -160,13 +180,43 @@ class MCModulationInterface:
         text_widget.configure(state='disabled')
 
     def get_mode_name(self):
+        """
+        Returns either Potentiated or Atrophied based on the current working mode
+        Used to get dynamically adaptive labels for various GUI elements
+        """
         if self.mode == self.BASE_POT:
             return "Potentiated"
-        elif self.mode == self.BASE_INJ:
+        elif self.mode == self.BASE_ATRO:
             return "Antrophied"
         else:  # should never happen
             print("Error: Unidentified mode: {}".format(self.mode))
             return "Potentiated"
+
+    def get_active_color(self):
+        """
+        Returns a color dynamically to match either Potentiated or Atrophied mode
+        Used in the graph of ``active'' measurement data
+        """
+        if self.mode == self.BASE_POT:
+            return self.pot_color
+        elif self.mode == self.BASE_ATRO:
+            return self.atroph_color
+        else:  # should never happen
+            print("Error: Unidentified mode: {}".format(self.mode))
+            return self.pot_color
+
+    def get_tfill_color(self):
+        """
+        Returns a color dynamically to match either Potentiated or Atrophied mode
+        Used in when shading the region between t statistic and the threshold level
+        """
+        if self.mode == self.BASE_POT:
+            return self.tpotfill_color
+        elif self.mode == self.BASE_ATRO:
+            return self.tatrophfill_color
+        else:  # should never happen
+            print("Error: Unidentified mode: {}".format(self.mode))
+            return self.tpotfill_color
 
     def export_spm_params(self, ti):
         """
@@ -224,16 +274,16 @@ class MCModulationInterface:
                 self.mode = self.BASE_POT
                 self.update_mode_labels()
         else:  # "Atrophied" in self.modebox_var.get():
-            if self.mode == self.BASE_INJ:  # if already in BASE_INJ-POT mode
+            if self.mode == self.BASE_ATRO:  # if already in BASE_INJ-POT mode
                 return  # exit and avoid unnecessary updates
             else:
-                self.mode = self.BASE_INJ
+                self.mode = self.BASE_ATRO
                 self.update_mode_labels()
 
     def update_mode_labels(self):
         """ Changes labels between Potentiated and Atrophied """
-        self.import_potentiated_button['text'] = "Import {} Data".format(self.get_mode_name())
-        self.potentiated_label['text'] = "Import {} Data".format(self.get_mode_name())
+        self.import_active_button['text'] = "Import {} Data".format(self.get_mode_name())
+        self.active_label['text'] = "Import {} Data".format(self.get_mode_name())
 
     def import_baseline(self):
         """
@@ -253,18 +303,18 @@ class MCModulationInterface:
                 traceback.print_tb(e.__traceback__)
                 return
 
-    def import_potentiated(self):
+    def import_active(self):
         """
-        Action for the import_baseline_button widget.
-        Implements protocol for importing potentiated data
+        Action for the import_active_button widget.
+        Implements protocol for importing active data
         """
         filename = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])  # get csv files
         if filename:  # only called if a file is chosen and avoids null filename on cancel click
             try:
-                self.pot_data = np.loadtxt(filename, delimiter=",", skiprows=self.start_row, max_rows=self.max_rows)  # load data
-                self.process_potentiated_data()  # process imported data
-                self.set_imported_data_description(self.potentiated_text_area, self.get_data_description(filename, self.pot_data))
-                self.potentiated_filename = filename  # if import is successful, set potentiated filename
+                self.active_data = np.loadtxt(filename, delimiter=",", skiprows=self.start_row, max_rows=self.max_rows)  # load data
+                self.process_active_data()  # process imported data
+                self.set_imported_data_description(self.active_text_area, self.get_data_description(filename, self.active_data))
+                self.active_filename = filename  # if import is successful, set potentiated filename
 
             except Exception as e:
                 print("Error importing data: " + str(e))
@@ -272,35 +322,35 @@ class MCModulationInterface:
 
     def compare(self):
         """
-        Action for the "Compare" button. Runs an SPM analysis between the imported baseline and potentiated data.
+        Action for the "Compare" button. Runs an SPM analysis between the imported baseline and active data.
         """
         if self.is_import_data_null():  # null data check
             return
 
         base_shape = self.baseline_data.shape
-        pot_shape = self.pot_data.shape
+        active_shape = self.active_data.shape
 
         base_rows = base_shape[0]
         base_cols = base_shape[1]
-        pot_rows = pot_shape[0]
-        pot_cols = pot_shape[1]
+        active_rows = active_shape[0]
+        active_cols = active_shape[1]
 
-        if base_rows != pot_rows and base_cols == pot_cols:  # same number columns, different number of rows
-            self.match_rows(base_rows, pot_rows)
+        if base_rows != active_rows and base_cols == active_cols:  # same number columns, different number of rows
+            self.match_rows(base_rows, active_rows)
 
-        elif base_rows == pot_rows and base_cols != pot_cols:  # same number rows, different number columns
-            self.match_cols(base_rows, base_cols, pot_rows, pot_cols)
+        elif base_rows == active_rows and base_cols != active_cols:  # same number rows, different number columns
+            self.match_cols(base_rows, base_cols, active_rows, active_cols)
 
-        elif base_shape != pot_shape:  # different number of rows AND different number of columns
-            self.match_rows(base_rows, pot_rows) # first match rows
-            self.match_cols(base_rows, base_cols, pot_rows, pot_cols)  # then match columns
+        elif base_shape != active_shape:  # different number of rows AND different number of columns
+            self.match_rows(base_rows, active_rows) # first match rows
+            self.match_cols(base_rows, base_cols, active_rows, active_cols)  # then match columns
 
-        if base_cols == 1 and pot_cols == 1:
-            self.increase_cols(base_rows, base_cols, pot_rows, pot_cols)
+        if base_cols == 1 and active_cols == 1:
+            self.increase_cols(base_rows, base_cols, active_rows, active_cols)
 
-        # TODO development vs GUI launch
+        # TODO switch between plotting modes here
         self.plot_test_results()
-        # self.run_two_sample_test(self.baseline_data.T, self.pot_data.T, x_label="Time [ms]", y_label="Position [mm]")
+        # self.run_two_sample_test(self.baseline_data.T, self.active_data.T, x_label="Time [ms]", y_label="Position [mm]")
 
     def export_tcurve(self, *args):  # used to write an output file
         """
@@ -312,7 +362,7 @@ class MCModulationInterface:
             return
 
         try:
-            t = spm1d.stats.ttest2(self.pot_data.T, self.baseline_data.T, equal_var=False)
+            t = spm1d.stats.ttest2(self.active_data.T, self.baseline_data.T, equal_var=False)
             filename = filedialog.asksaveasfilename(filetypes=[("CSV files", "*.csv")])
             if filename is None or filename == "":  # in case export was cancelled
                 return
@@ -335,7 +385,7 @@ class MCModulationInterface:
             return
 
         try:
-            t = spm1d.stats.ttest2(self.pot_data.T, self.baseline_data.T, equal_var=False)
+            t = spm1d.stats.ttest2(self.active_data.T, self.baseline_data.T, equal_var=False)
             ti = t.inference(alpha=0.05, two_tailed=False, interp=True)
             filename = filedialog.asksaveasfilename(filetypes=[("Text files", "*.csv")])
             if filename is None or filename == "":  # in case export was cancelled
@@ -346,7 +396,7 @@ class MCModulationInterface:
             # Print file header
             metadata = "# START HEADER\n"
             metadata += "# Baseline file,{}\n".format(Path(self.baseline_filename).name)
-            metadata += "# Potentiated file,{}\n".format(Path(self.potentiated_filename).name)
+            metadata += "# {} file,{}\n".format(self.get_mode_name(), Path(self.active_filename).name)
             metadata += "# Alpha,{:.2f}\n".format(ti.alpha)  # alpha value
             metadata += "# Threshold,{:.2f}\n".format(ti.zstar)  # threshold t-statistic value
             metadata += "# END HEADER\n"
@@ -441,20 +491,20 @@ class MCModulationInterface:
                 traceback.print_tb(e.__traceback__)
                 return
 
-    def set_potentiated_data(self, pot_filename):
+    def set_active_data(self, active_filename):
         """
-        Action to programatically set potentiated data
-        Implements the protocol for importing potentiated data.
+        Action to programatically set active data
+        Implements the protocol for importing active data.
         """
-        if pot_filename:  # only called if a file is chosen and avoids null filename on cancel click
+        if active_filename:  # only called if a file is chosen and avoids null filename on cancel click
             try:
-                self.pot_data = np.loadtxt(pot_filename, delimiter=",", skiprows=self.start_row, max_rows=self.max_rows)  # load data
-                self.process_potentiated_data()  # process imported data
-                self.set_imported_data_description(self.potentiated_text_area, self.get_data_description(pot_filename, self.pot_data))
-                self.potentiated_filename = pot_filename  # if import is successful, set potentiated filename
+                self.active_data = np.loadtxt(active_filename, delimiter=",", skiprows=self.start_row, max_rows=self.max_rows)  # load data
+                self.process_active_data()  # process imported data
+                self.set_imported_data_description(self.active_text_area, self.get_data_description(active_filename, self.active_data))
+                self.active_filename = active_filename  # if import is successful, set active filename
 
             except Exception as e:
-                print("Error importing potentiated data: " + str(e))
+                print("Error importing active data: " + str(e))
                 traceback.print_tb(e.__traceback__)
                 return
 
@@ -474,18 +524,18 @@ class MCModulationInterface:
         if len(self.baseline_data.shape) == 1:
             self.baseline_data = self.baseline_data.reshape(-1, 1)
 
-    def process_potentiated_data(self):
-        if self.pot_data is None:  # null check
+    def process_active_data(self):
+        if self.active_data is None:  # null check
             return
 
-        if self.normalize: self.pot_data = self.pot_data / self.pot_data.max(axis=0)  # normalize
-        self.pot_data = self.pot_data + self.position_offset  # add vertical offset
+        if self.normalize: self.active_data = self.active_data / self.active_data.max(axis=0)  # normalize
+        self.active_data = self.active_data + self.position_offset  # add vertical offset
 
-        self.pot_data = self.pot_data + self.position_offset
+        self.active_data = self.active_data + self.position_offset
 
         # if data is a single column (1D array) reshape into a 2D array (matrix with one column)
-        if len(self.pot_data.shape) == 1:
-            self.pot_data = self.pot_data.reshape(-1, 1)
+        if len(self.active_data.shape) == 1:
+            self.active_data = self.active_data.reshape(-1, 1)
 
     def get_time_offset(self):
         """
@@ -514,12 +564,12 @@ class MCModulationInterface:
         :return:
         """
         if base_rows < pot_rows:  # more potentiated rows; trim potentiated to match baseline
-            self.pot_data = self.pot_data[0:base_rows, :]
+            self.active_data = self.active_data[0:base_rows, :]
 
         elif base_rows > pot_rows:  # more baseline rows; trim baseline to match potentiated
             self.baseline_data = self.baseline_data[0:pot_rows, :]
 
-    def match_cols(self, base_rows, base_cols, pot_rows, pot_cols):
+    def match_cols(self, base_rows, base_cols, active_rows, active_cols):
         """
         If there are more potentiated columns than baseline columns, adds more columns to baseline array until the
          number of columns in baseline and potentiated match.
@@ -529,61 +579,59 @@ class MCModulationInterface:
          the noise size is in the interval of +/1 0.1 of each data point's absolute value.
 
         :param base_cols:
-        :param pot_cols:
+        :param active_cols:
         :return:
         """
-        if base_cols < pot_cols:  # more potentiated columns; add more noisy averaged baseline columns
-            temp_baseline_data = np.zeros(shape=(pot_rows, pot_cols))  # declare empty array with proper dimensions (more columns)
+        if base_cols < active_cols:  # more potentiated columns; add more noisy averaged baseline columns
+            temp_baseline_data = np.zeros(shape=(active_rows, active_cols))  # declare empty array with proper dimensions (more columns)
             col_avg = self.baseline_data.mean(axis=1)  # get column average
 
             for i, col in enumerate(self.baseline_data.T):  # fill expanded array's first columns with existing baseline data
                 temp_baseline_data[:,i] = col
-            for j in range(base_cols, pot_cols):
+            for j in range(base_cols, active_cols):
                 temp_baseline_data[:,j] = col_avg + 0.1 * np.random.uniform(-np.abs(col_avg), abs(col_avg))  # add a noisy average of original columns. adds in range of \pm 10 percent of each data point
 
             self.baseline_data = temp_baseline_data # overwrite old data with correctly sized array
 
-        elif base_cols > pot_cols:  # more baseline columns; add more noisy averaged potentiated columns
-            temp_potentiated_data = np.zeros(shape=(base_rows, base_cols))  # declare empty array with proper dimensions (more columns)
-            col_avg = self.pot_data.mean(axis=1)  # get column average
+        elif base_cols > active_cols:  # more baseline columns; add more noisy averaged potentiated columns
+            temp_active_data = np.zeros(shape=(base_rows, base_cols))  # declare empty array with proper dimensions (more columns)
+            col_avg = self.active_data.mean(axis=1)  # get column average
 
-            for i, col in enumerate(self.pot_data.T):  # fill expanded array's first columns with existing potentiated data
-                temp_potentiated_data[:,i] = col
-            for j in range(pot_cols, base_cols):
-                temp_potentiated_data[:,j] = col_avg + 0.1 * np.random.uniform(-np.abs(col_avg), abs(col_avg))  # add a noisy average of original columns. adds in range of \pm 10 percent of each data point
+            for i, col in enumerate(self.active_data.T):  # fill expanded array's first columns with existing potentiated data
+                temp_active_data[:,i] = col
+            for j in range(active_cols, base_cols):
+                temp_active_data[:,j] = col_avg + 0.1 * np.random.uniform(-np.abs(col_avg), abs(col_avg))  # add a noisy average of original columns. adds in range of \pm 10 percent of each data point
 
-            self.pot_data = temp_potentiated_data # overwrite old data with correctly sized array
+            self.active_data = temp_active_data # overwrite old data with correctly sized array
 
-    def increase_cols(self, base_rows, base_cols, pot_rows, pot_cols):
+    def increase_cols(self, base_rows, base_cols, active_rows, active_cols):
         """
-        TODO documentation of what happens if there is only one column of data
-
         Extra columns are found by taking the average of the existing columns, and then adding noise to each datapoint;
          the noise size is in the interval of +/1 0.1 of each data point's absolute value.
 
         :param base_cols:
-        :param pot_cols:
+        :param active_cols:
         :return:
         """
-        temp_baseline_data = np.zeros(shape=(pot_rows, 5))  # declare empty array with 5 columns
+        temp_baseline_data = np.zeros(shape=(active_rows, 5))  # declare empty array with 5 columns
         col_avg = self.baseline_data.mean(axis=1)  # get column average
 
         for i, col in enumerate(self.baseline_data.T):  # fill expanded array's first columns with existing baseline data
             temp_baseline_data[:,i] = col
-        for j in range(base_cols, pot_cols):
+        for j in range(base_cols, active_cols):
             temp_baseline_data[:,j] = col_avg + 0.1 * np.random.uniform(-np.abs(col_avg), abs(col_avg))  # add a noisy average of original columns. adds in range of \pm 10 percent of each data point
 
         self.baseline_data = temp_baseline_data # overwrite old data with correctly sized array
 
-        temp_potentiated_data = np.zeros(shape=(base_rows, 5))  # declare empty array with 5 columns
-        col_avg = self.pot_data.mean(axis=1)  # get column average
+        temp_active_data = np.zeros(shape=(base_rows, 5))  # declare empty array with 5 columns
+        col_avg = self.active_data.mean(axis=1)  # get column average
 
-        for i, col in enumerate(self.pot_data.T):  # fill expanded array's first columns with existing potentiated data
-            temp_potentiated_data[:,i] = col
-        for j in range(pot_cols, base_cols):
-            temp_potentiated_data[:,j] = col_avg + 0.1 * np.random.uniform(-np.abs(col_avg), abs(col_avg))  # add a noisy average of original columns. adds in range of \pm 10 percent of each data point
+        for i, col in enumerate(self.active_data.T):  # fill expanded array's first columns with existing potentiated data
+            temp_active_data[:,i] = col
+        for j in range(active_cols, base_cols):
+            temp_active_data[:,j] = col_avg + 0.1 * np.random.uniform(-np.abs(col_avg), abs(col_avg))  # add a noisy average of original columns. adds in range of \pm 10 percent of each data point
 
-        self.pot_data = temp_potentiated_data # overwrite old data with correctly sized array
+        self.active_data = temp_active_data # overwrite old data with correctly sized array
     # -----------------------------------------------------------------------------
     # END DATA SHAPE ACCOMODATION FUNCTIONS
     # -----------------------------------------------------------------------------
@@ -595,19 +643,19 @@ class MCModulationInterface:
         """
         Used as a null check for imported data
         Returns true (data is null) if there are either no rows or
-         no columns in either of baseline and potentiated data arrays.
+         no columns in either of baseline and active data arrays.
 
-        e.g. base_shape.shape = (0, 100) and pot_shape.shape = (10, 100) returns true (data is null)
+        e.g. base_data.shape = (0, 100) and active_data.shape = (10, 100) returns true (data is null)
         """
         base_shape = self.baseline_data.shape
-        pot_shape = self.pot_data.shape
+        active_shape = self.active_data.shape
 
         base_rows = base_shape[0]
         base_cols = base_shape[1]
-        pot_rows = pot_shape[0]
-        pot_cols = pot_shape[1]
+        active_rows = active_shape[0]
+        active_cols = active_shape[1]
 
-        if base_rows*base_cols*pot_rows*pot_cols == 0: # quick way to check if any of the values are zero
+        if base_rows*base_cols*active_rows*active_cols == 0: # quick way to check if any of the values are zero
             return True
         else:
             return False
@@ -615,11 +663,11 @@ class MCModulationInterface:
     def get_ti(self):
         """
         Returns the spm.t and spm.ti objects resulting from an SMP t test between
-        the currently loaded baseline and potentiated data
+        the currently loaded baseline and active data
         """
         try:
             # t = spm1d.stats.ttest2(self.baseline_data.T, self.pot_data.T, equal_var=False)
-            t = spm1d.stats.ttest2(self.pot_data.T, self.baseline_data.T, equal_var=False)
+            t = spm1d.stats.ttest2(self.active_data.T, self.baseline_data.T, equal_var=False)
             ti = t.inference(alpha=0.05, two_tailed=False, interp=True)
             return t, ti
         except Exception as e:
@@ -628,8 +676,8 @@ class MCModulationInterface:
 
     def plot_test_results(self):
         """
-        Plots the baseline and potentiated data's mean and standard deviation clouds on axis one
-        Plots the SPM t-test between the baseline and potentiated data on axis two
+        Plots the baseline and active data's mean and standard deviation clouds on axis one
+        Plots the SPM t-test between the baseline and active data on axis two
         """
         try:
             t, ti = self.get_ti()  # try getting t an ti objects
@@ -639,13 +687,13 @@ class MCModulationInterface:
 
         self.set_imported_data_description(self.spm_text_area, self.export_spm_params(ti))
 
-        num_points = np.shape(self.pot_data)[0]  # could also use base_data
+        num_points = np.shape(self.active_data)[0]  # could also use base_data
         time = np.linspace(0, num_points - 1, num_points) + self.get_time_offset()  # include time offset
 
-        pot_mean = np.mean(self.pot_data, axis=1)
+        active_mean = np.mean(self.active_data, axis=1)
         base_mean = np.mean(self.baseline_data, axis=1)
-        pot_sd = np.std(self.pot_data, ddof=1)
-        base_sd = np.std(self.baseline_data, ddof=1)
+        pot_sd = np.std(self.active_data, ddof=1, axis=1)  # note SD is lessened somewhat for reasonable plot scale
+        base_sd = np.std(self.baseline_data, ddof=1, axis=1)
 
         fig, axes = plt.subplots(1, 2, figsize=(8, 4))
 
@@ -655,10 +703,10 @@ class MCModulationInterface:
         ax.set_xlabel("Time [ms]")
         ax.set_ylabel("Position [mm]")
 
-        ax.plot(time, pot_mean, label=self.get_mode_name())
-        ax.plot(time, base_mean, label="Baseline")
-        ax.fill_between(time, pot_mean - pot_sd, pot_mean + pot_sd)  # standard deviation clouds
-        ax.fill_between(time, base_mean - base_sd, base_mean + base_sd)  # standard deviation clouds
+        ax.plot(time, base_mean, color=self.base_color, linewidth=2.5, label="Baseline", zorder=4)  # plot in front
+        ax.plot(time, active_mean, color=self.get_active_color(), linewidth=2.5, label=self.get_mode_name(), zorder=3)
+        ax.fill_between(time, active_mean - pot_sd, active_mean + pot_sd, color=self.get_active_color(), alpha=self.active_alpha, zorder=2)  # standard deviation clouds
+        ax.fill_between(time, base_mean - base_sd, base_mean + base_sd, color=self.base_color, alpha=self.base_alpha, zorder=1)  # standard deviation clouds
 
         ax.axhline(y=0, color='k', linestyle=':')  # dashed line at y = 0
         ax.legend()
@@ -667,15 +715,15 @@ class MCModulationInterface:
         ax = axes[1]
         self.remove_spines(ax)
         ax.set_xlabel("Time [ms]")
-        ax.set_ylabel("SPM T Statistic")
+        ax.set_ylabel("SPM $t$ Statistic", labelpad=-0.1)
 
-        ax.plot(time, t.z, color="#000000")  # plot t-curve
-        ax.axhline(y=0, color='k', linestyle=':')  # dashed line at y = 0
-        ax.axhline(y=ti.zstar, color='k', linestyle='--')  # dashed line at t threshold
+        ax.plot(time, t.z, color=self.tline_color)  # plot t-curve
+        ax.axhline(y=0, color='#000000', linestyle=':')  # dashed line at y = 0
+        ax.axhline(y=ti.zstar, color='#000000', linestyle='--')  # dashed line at t threshold
         ax.text(73, ti.zstar + 0.4, "$\\alpha = {:.2f}$\n$t^* = {:.2f}$".format(ti.alpha, ti.zstar),
                 va='bottom', ha='left', bbox=dict(facecolor='#FFFFFF', edgecolor='#222222', boxstyle='round,pad=0.3'))
 
-        ax.fill_between(time, t.z, ti.zstar, where=t.z >= ti.zstar, interpolate=True)  # shade between curve and threshold
+        ax.fill_between(time, t.z, ti.zstar, where=t.z >= ti.zstar, interpolate=True, color=self.get_tfill_color())  # shade between curve and threshold
 
         plt.tight_layout()
         plt.show()
@@ -755,6 +803,7 @@ def development_launch():
 
 
 if __name__ == "__main__":
-    # gui_launch()
-    development_launch()
+    # TODO switch betwee development vs GUI launch here
+    gui_launch()
+    # development_launch()
     # practice()
