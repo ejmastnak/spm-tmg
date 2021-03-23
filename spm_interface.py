@@ -1,5 +1,5 @@
-import matplotlib
-matplotlib.use("TkAgg")  # set tk backend
+import matplotlib as mpl
+mpl.use("TkAgg")  # set tk backend
 from matplotlib import pyplot as plt
 from pathlib import Path
 import os
@@ -10,13 +10,24 @@ from tkinter import filedialog
 import numpy as np
 import spm1d
 
-plt.rcParams['mathtext.fontset'] = 'cm'
-plt.rcParams['font.family'] = 'STIXGeneral'
+# set serif fonts for matplotlib
+import matplotlib.font_manager as font_manager
+mpl.rcParams['font.family'] = 'serif'
+
+try:
+    cmfont = font_manager.FontProperties(fname=mpl.get_data_path() + '/fonts/ttf/cmr10.ttf')
+    mpl.rcParams['font.serif'] = cmfont.get_name()
+    mpl.rcParams['mathtext.fontset'] = 'cm'
+    mpl.rcParams['axes.unicode_minus'] = False  # so the minus sign '-' displays correctly in plots
+except FileNotFoundError as error:
+    plt.rcParams['mathtext.fontset'] = 'cm'
+    plt.rcParams['font.family'] = 'STIXGeneral'
+
 plt.rc('axes', labelsize=12)    # fontsize of the x and y labels
 plt.rc('axes', titlesize=16)    # fontsize of titles
 
 
-class MCModulationInterface:
+class SPMInterface:
 
     def __init__(self, base_filename=None, pot_filename=None):
         """
@@ -27,6 +38,7 @@ class MCModulationInterface:
         self.BASE_POT = "BASE_POT"
         self.BASE_ATRO = "BASE_INJ"
         self.mode = self.BASE_POT  # "BASE_POT" or "BASE_INJ" for comparing baseline to either potentiated or injured
+        self.save_figures = True
 
         self.baseline_filename = ""  # name of file holding baseline data
         self.active_filename = ""  # name of file holding potentiated data
@@ -348,7 +360,7 @@ class MCModulationInterface:
         if base_cols == 1 and active_cols == 1:
             self.increase_cols(base_rows, base_cols, active_rows, active_cols)
 
-        # TODO switch between plotting modes here
+        # MARK switch between plotting modes here
         self.plot_test_results()
         # self.run_two_sample_test(self.baseline_data.T, self.active_data.T, x_label="Time [ms]", y_label="Position [mm]")
 
@@ -724,8 +736,11 @@ class MCModulationInterface:
                 va='bottom', ha='left', bbox=dict(facecolor='#FFFFFF', edgecolor='#222222', boxstyle='round,pad=0.3'))
 
         ax.fill_between(time, t.z, ti.zstar, where=t.z >= ti.zstar, interpolate=True, color=self.get_tfill_color())  # shade between curve and threshold
-
         plt.tight_layout()
+
+        figure_output_path = str(Path(self.baseline_filename).parent) + "/spm-figure.png"
+        print(figure_output_path)
+        if self.save_figures: plt.savefig(figure_output_path, dpi=150)
         plt.show()
 
     @staticmethod
@@ -791,7 +806,7 @@ def practice():
 
 
 def gui_launch():
-    interface = MCModulationInterface()
+    interface = SPMInterface()
 
 
 def development_launch():
@@ -799,7 +814,7 @@ def development_launch():
     data_dir = "/Users/ejmastnak/Documents/Dropbox/projects-and-products/tmg-bmc/spm/spm-measurements/spm_1_9_2020/sd/"
     base_filename = data_dir + "sd_base.csv"
     pot_filename = data_dir + "sd_pot.csv"
-    interface = MCModulationInterface(base_filename=base_filename, pot_filename=pot_filename)
+    interface = SPMInterface(base_filename=base_filename, pot_filename=pot_filename)
 
 
 if __name__ == "__main__":
