@@ -1,6 +1,3 @@
-import matplotlib as mpl
-mpl.use("TkAgg")  # set tk backend
-from matplotlib import pyplot as plt
 from pathlib import Path
 import os
 import traceback
@@ -8,23 +5,10 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import filedialog
 import numpy as np
-import spm1d
 
-# set serif fonts for matplotlib
-import matplotlib.font_manager as font_manager
-mpl.rcParams['font.family'] = 'serif'
-
-try:
-    cmfont = font_manager.FontProperties(fname=mpl.get_data_path() + '/fonts/ttf/cmr10.ttf')
-    mpl.rcParams['font.serif'] = cmfont.get_name()
-    mpl.rcParams['mathtext.fontset'] = 'cm'
-    mpl.rcParams['axes.unicode_minus'] = False  # so the minus sign '-' displays correctly in plots
-except FileNotFoundError as error:
-    plt.rcParams['mathtext.fontset'] = 'cm'
-    plt.rcParams['font.family'] = 'STIXGeneral'
-
-plt.rc('axes', labelsize=12)    # fontsize of the x and y labels
-plt.rc('axes', titlesize=16)    # fontsize of titles
+import analysis
+import data_processing
+import plotting
 
 
 class SPMInterface:
@@ -38,25 +22,12 @@ class SPMInterface:
         self.BASE_POT = "BASE_POT"
         self.BASE_ATRO = "BASE_INJ"
         self.mode = self.BASE_POT  # "BASE_POT" or "BASE_INJ" for comparing baseline to either potentiated or injured
-        self.save_figures = True
 
         self.baseline_filename = ""  # name of file holding baseline data
         self.active_filename = ""  # name of file holding potentiated data
         self.baseline_data = np.zeros(shape=(0, 0))  # e.g. 1000 x 10
         self.active_data = np.zeros(shape=(0, 0))  # e.g. 1000 x 10
         self.new_data = True
-
-        # START COLORS
-        self.base_color = "#000000"  # black
-        self.pot_color = "#dd502d"  # orange
-        self.atroph_color = "#3997bf"  # blue
-        self.base_alpha = 0.20
-        self.active_alpha = 0.75
-
-        self.tline_color = "#000000"  # black
-        self.tpotfill_color = "#7e3728"  # light orange
-        self.tatrophfill_color = "#244d90"  # light blue
-        # END COLORS
 
         # START DATA PROCESSING PARAMETERS
         self.start_row = 1  # csv data file row at which to begin reading data (0-indexed)
@@ -109,8 +80,8 @@ class SPMInterface:
         else: self.mode_combobox.current(1)
         self.mode_combobox.bind("<<ComboboxSelected>>", self.change_mode)
 
-        self.import_active_button = ttk.Button(self.controlframe, text="Import {} Data".format(self.get_mode_name()), command=self.import_active)
-        self.import_baseline_button = ttk.Button(self.controlframe, text="Import Baseline Data", command=self.import_baseline)
+        self.import_active_button = ttk.Button(self.controlframe, text="Import {} Data".format(self.get_mode_name()), command=self.import_active_data)
+        self.import_baseline_button = ttk.Button(self.controlframe, text="Import Baseline Data", command=self.import_baseline_data)
         self.compare_button = ttk.Button(self.controlframe, text="Compare", command=self.compare)
         self.export_curve_button = ttk.Button(self.controlframe, text="Export t Curve", command=self.export_tcurve)
         self.export_params_button = ttk.Button(self.controlframe, text="Export t Parameters", command=self.export_tparams)
@@ -163,11 +134,10 @@ class SPMInterface:
     def get_data_description(filename, data):
         """
         Used to get a string description of imported baseline/potentiated data
-        to display in the GUI, so the user knows what they've imported
+        to display in the GUI, to give the user a description of the file they've imported
 
-        :param filename:
-        :param data:
-        :return:
+        :param filename: full path to a file containing measurement data
+        :param data: 2D numpy array holding the data measurement data; rows are data samples and columns are measurement sets
         """
 
         file_string = "Filename: " + Path(filename).name
@@ -204,81 +174,15 @@ class SPMInterface:
             print("Error: Unidentified mode: {}".format(self.mode))
             return "Potentiated"
 
-    def get_active_color(self):
-        """
-        Returns a color dynamically to match either Potentiated or Atrophied mode
-        Used in the graph of ``active'' measurement data
-        """
-        if self.mode == self.BASE_POT:
-            return self.pot_color
-        elif self.mode == self.BASE_ATRO:
-            return self.atroph_color
-        else:  # should never happen
-            print("Error: Unidentified mode: {}".format(self.mode))
-            return self.pot_color
-
-    def get_tfill_color(self):
-        """
-        Returns a color dynamically to match either Potentiated or Atrophied mode
-        Used in when shading the region between t statistic and the threshold level
-        """
-        if self.mode == self.BASE_POT:
-            return self.tpotfill_color
-        elif self.mode == self.BASE_ATRO:
-            return self.tatrophfill_color
-        else:  # should never happen
-            print("Error: Unidentified mode: {}".format(self.mode))
-            return self.tpotfill_color
-
-    def export_spm_params(self, ti):
-        """
-        Used to get a string description of an SPM two-sample t-test
-
-        :param ti: An SPM TI inference object
-        :return:
-        """
-
-        # Start header
-        # Potentiated file,"filename"
-        # Potentiated file,"filename"
-        # Alpha,
-        # T-star,
-        # # End header
-        # Parameter,Cluster,Cluster
-
-        analysis_string = "Alpha: {:.2f}".format(ti.alpha)  # alpha value
-        analysis_string += "\nThreshold: {:.2f}".format(ti.zstar)  # threshold t-statistic value
-        clusters = ti.clusters  # portions of curve above threshold value
-        threshold = ti.zstar
-        if clusters is not None:
-            for i, cluster in enumerate(clusters):
-                tstart, tend = cluster.endpoints  # start and end time of each cluster
-                tstart += self.get_time_offset()  # add potential time offset
-                tend += self.get_time_offset()
-                x, z = cluster._X, cluster._Z  # x and z (time and t-statistic) coordinates of the cluster
-                z_max = np.max(z)  # max value of t-statistic in this cluster
-                N = len(x)  # number of points in this cluster
-                A = 0.0  # area under curve
-                for k in range(1, N, 1):  # i = 1, 2, ..., N
-                    A += np.abs(0.5*(z[k] + z[k-1]))*(x[k] - x[k-1])  # midpoint formula
-                A_threshold = A - (threshold * (x[-1] - x[0]))  # subtract area below threshold (threshold * interval length)
-
-                cluster_string = "\n" + 50*"-"  # draws a bunch of dashes i.e. ----------
-                cluster_string += "\nSignificance Region {}".format(i+1)  # include a newline character
-                cluster_string += "\nProbability: {:.2e}".format(cluster.P)
-                cluster_string += "\nProbability (decimal): {:.4f}".format(cluster.P)
-                cluster_string += "\nStart: {:.2f}\t End: {:.2f}".format(tstart, tend)
-                cluster_string += "\nCentroid: ({:.2f}, {:.2f})".format(cluster.centroid[0] + self.get_time_offset(), cluster.centroid[1])
-                cluster_string += "\nMaximum: {:.2f}".format(z_max)
-                cluster_string += "\nArea Above Threshold: {:.2f}".format(A_threshold)
-                cluster_string += "\nArea Above x Axis: {:.2f}".format(A)
-                analysis_string += cluster_string
-        return analysis_string
-
     # -----------------------------------------------------------------------------
     # START GUI WIDGET ACTION FUNCTIONS
     # -----------------------------------------------------------------------------
     def change_mode(self, event):
+        """
+        Changes between "Potentiated" and "Atrophied" GUI modes based on the inputed
+        :param event: the tkinter combobox event triggering the change mode action.
+         Needed in the function declaration even though it is not explicitly used
+        """
         if "Potentiated" in self.modebox_var.get():
             if self.mode == self.BASE_POT:  # if already in BASE-POT mode
                 return  # exit and avoid unnecessary updates
@@ -293,14 +197,14 @@ class SPMInterface:
                 self.update_mode_labels()
 
     def update_mode_labels(self):
-        """ Changes labels between Potentiated and Atrophied """
+        """ Changes labels of various GUI components to reflect Potentiated or Atrophied mode """
         self.import_active_button['text'] = "Import {} Data".format(self.get_mode_name())
         self.active_label['text'] = "Import {} Data".format(self.get_mode_name())
 
-    def import_baseline(self):
+    def import_baseline_data(self):
         """
-        Action for the import_baseline_button widget.
-        Implements the protocol for importing baseline data.
+        Implements the protocol for importing baseline measurement data.
+        This method is set as the action for the import_baseline_button widget.
         """
         filename = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])  # get csv files
         if filename:  # only called if a file is chosen and avoids null filename on cancel click
@@ -315,10 +219,11 @@ class SPMInterface:
                 traceback.print_tb(e.__traceback__)
                 return
 
-    def import_active(self):
+    def import_active_data(self):
         """
-        Action for the import_active_button widget.
-        Implements protocol for importing active data
+        Implements the protocol for importing "active" measurement data, which may be either
+         potentiated or atrophied depending on the current GUI mode
+        This method is set as the action for the import_active_button widget.
         """
         filename = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])  # get csv files
         if filename:  # only called if a file is chosen and avoids null filename on cancel click
@@ -338,31 +243,24 @@ class SPMInterface:
         """
         if self.is_import_data_null():  # null data check
             return
-
-        base_shape = self.baseline_data.shape
-        active_shape = self.active_data.shape
-
-        base_rows = base_shape[0]
-        base_cols = base_shape[1]
-        active_rows = active_shape[0]
-        active_cols = active_shape[1]
-
-        if base_rows != active_rows and base_cols == active_cols:  # same number columns, different number of rows
-            self.match_rows(base_rows, active_rows)
-
-        elif base_rows == active_rows and base_cols != active_cols:  # same number rows, different number columns
-            self.match_cols(base_rows, base_cols, active_rows, active_cols)
-
-        elif base_shape != active_shape:  # different number of rows AND different number of columns
-            self.match_rows(base_rows, active_rows) # first match rows
-            self.match_cols(base_rows, base_cols, active_rows, active_cols)  # then match columns
-
-        if base_cols == 1 and active_cols == 1:
-            self.increase_cols(base_rows, base_cols, active_rows, active_cols)
-
-        # MARK switch between plotting modes here
+        self.reshape_data()  # reshape input data as necessary
         self.plot_test_results()
-        # self.run_two_sample_test(self.baseline_data.T, self.active_data.T, x_label="Time [ms]", y_label="Position [mm]")
+
+    def plot_test_results(self):
+        """
+        Plots the baseline and active data's mean and standard deviation clouds on axis one
+        Plots the SPM t-test between the baseline and active data on axis two
+        """
+        try:
+            t, ti = analysis.get_spm_ti(self.baseline_data, self.active_data)  # try getting t an ti objects
+        except Exception as e:
+            print("Error performing SPM analysis: " + str(e))
+            return
+
+        self.set_imported_data_description(self.spm_text_area, analysis.get_spm_ti_string_description(ti, time_offset=self.get_time_offset()))
+        plotting.plot_test_results(t, ti, self.baseline_data, self.active_data, time_offset=self.get_time_offset(),
+                                   figure_output_path=Path(self.active_filename).name.replace(".csv", ".png"),
+                                   mode_name=self.get_mode_name(), mode=self.mode)
 
     def export_tcurve(self, *args):  # used to write an output file
         """
@@ -374,19 +272,12 @@ class SPMInterface:
             return
 
         try:
-            t = spm1d.stats.ttest2(self.active_data.T, self.baseline_data.T, equal_var=False)
-            filename = filedialog.asksaveasfilename(filetypes=[("CSV files", "*.csv")])
-            if filename is None or filename == "":  # in case export was cancelled
-                return
-            if not filename.endswith(".csv"):  # append .csv extension, unless user has done so manually
-                filename += ".csv"
-            time = np.arange(0, len(t.z), 1)  # assumes 1 kHz sampling, i.e. 1ms per sample. Time reads 0, 1, 2, ...
-            time += self.get_time_offset()  # add potential time offset
-            header = "Time [ms], SPM t-statistic"
-            np.savetxt(filename, np.column_stack([time, t.z]), delimiter=',', header=header)
+            t = analysis.get_spm_t(self.baseline_data, self.active_data)  # try getting t object
         except Exception as e:
             print("Error performing SPM analysis: " + str(e))
             return
+
+        analysis.export_t_curve(self.baseline_data, self.active_data, self.get_time_offset())
 
     def export_tparams(self, *args):  # used to write an output file
         """
@@ -397,83 +288,14 @@ class SPMInterface:
             return
 
         try:
-            t = spm1d.stats.ttest2(self.active_data.T, self.baseline_data.T, equal_var=False)
-            ti = t.inference(alpha=0.05, two_tailed=False, interp=True)
-            filename = filedialog.asksaveasfilename(filetypes=[("Text files", "*.csv")])
-            if filename is None or filename == "":  # in case export was cancelled
-                return
-            if not filename.endswith(".csv"):  # append .csv extension, unless user has done so manually
-                filename += ".csv"
-
-            # Print file header
-            metadata = "# START HEADER\n"
-            metadata += "# Baseline file,{}\n".format(Path(self.baseline_filename).name)
-            metadata += "# {} file,{}\n".format(self.get_mode_name(), Path(self.active_filename).name)
-            metadata += "# Alpha,{:.2f}\n".format(ti.alpha)  # alpha value
-            metadata += "# Threshold,{:.2f}\n".format(ti.zstar)  # threshold t-statistic value
-            metadata += "# END HEADER\n"
-
-            with open(filename, 'w') as output:  # open file for writing
-                output.write(metadata)  # write metadata
-
-                clusters = ti.clusters  # portions of curve above threshold value
-                threshold = ti.zstar
-
-                if clusters is None:  # catch possibility that threshold is not exceeded
-                    output.write("Significance threshold not exceeded.")
-                else:
-
-                    # Create header string of the form "# Parameter,Cluster 1,Cluster 2, ..."
-                    header = "# Parameter"
-                    for i in range(len(clusters)):
-                        header += ",Cluster {}".format(i + 1)
-                    header += "\n"  # add new line
-                    output.write(header)  # write header
-
-                    # Assign each outputted parameter a row; pack into an array for easier printing to file
-                    param_strs = ["Probability",  # probability for threshold in exponent (scientific) notation
-                                  "Probability (decimal)",  # probability as a float
-                                  "Start Time [ms]",
-                                  "End Time [ms]",
-                                  "Centroid Time [ms]",
-                                  "Centroid t-value",
-                                  "Maximum",
-                                  "Area Above Threshold",
-                                  "Area Above x Axis"]
-
-                    for i, cluster in enumerate(clusters):  # loop through significance clusters
-                        tstart, tend = cluster.endpoints  # start and end time of each cluster
-                        tstart += self.get_time_offset()  # add potential time offset
-                        tend += self.get_time_offset()
-
-                        x, z = cluster._X, cluster._Z  # x and z (time and t-statistic) coordinates of the cluster
-                        z_max = np.max(z)  # max value of t-statistic in this cluster
-                        N = len(x)  # number of points in this cluster
-                        A = 0.0  # area under curve
-                        for k in range(1, N, 1):  # i = 1, 2, ..., N
-                            A += np.abs(0.5*(z[k] + z[k-1]))*(x[k] - x[k-1])  # midpoint formula
-                        A_threshold = A - (threshold * (x[-1] - x[0]))  # subtract area below threshold (threshold * interval length)
-
-                        param_strs[0] += ",{:.2e}".format(cluster.P)
-                        param_strs[1] += ",{:.4f}".format(cluster.P)
-                        param_strs[2] += ",{:.2f}".format(tstart)
-                        param_strs[3] += ",{:.2f}".format(tend)
-                        param_strs[4] += ",{:.2f}".format(cluster.centroid[0] + self.get_time_offset())
-                        param_strs[5] += ",{:.2f}".format(cluster.centroid[1])
-                        param_strs[6] += ",{:.2f}".format(z_max)
-                        param_strs[7] += ",{:.2f}".format(A_threshold)
-                        param_strs[8] += ",{:.2f}".format(A)
-
-                    # print parameter strings---this is where it's useful the strings are in an array
-                    for i, param_str in enumerate(param_strs):
-                        output.write(param_str)  # write header
-                        if i < len(param_strs):  # don't print new line for last string at end of file
-                            output.write("\n")
-
+            _, ti = analysis.get_spm_ti(self.baseline_data, self.active_data)  # try getting t an ti objects
         except Exception as e:
-            print("Error exporting SPM parameters: " + str(e))
-            traceback.print_exception(type(e), e, e.__traceback__)
+            print("Error performing SPM analysis: " + str(e))
             return
+
+        analysis.export_ti_parameters(ti, time_offset=self.get_time_offset(),
+                                      baseline_filename=self.baseline_filename, active_filename=self.active_filename,
+                                      mode_name=self.get_mode_name())
 
     def close(self):
         """
@@ -520,137 +342,6 @@ class SPMInterface:
                 traceback.print_tb(e.__traceback__)
                 return
 
-    # -----------------------------------------------------------------------------
-    # START SPM SIGNAL PROCESSING FUNCTIONS
-    # -----------------------------------------------------------------------------
-    def process_baseline_data(self):
-        if self.baseline_data is None:  # null check
-            return
-
-        if self.normalize: self.baseline_data = self.baseline_data / self.baseline_data.max(axis=0)  # normalize
-        self.baseline_data = self.baseline_data + self.position_offset  # add vertical offset
-
-        self.baseline_data = self.baseline_data + self.position_offset
-
-        # if data is a single column (1D array) reshape into a 2D array (matrix with one column)
-        if len(self.baseline_data.shape) == 1:
-            self.baseline_data = self.baseline_data.reshape(-1, 1)
-
-    def process_active_data(self):
-        if self.active_data is None:  # null check
-            return
-
-        if self.normalize: self.active_data = self.active_data / self.active_data.max(axis=0)  # normalize
-        self.active_data = self.active_data + self.position_offset  # add vertical offset
-
-        self.active_data = self.active_data + self.position_offset
-
-        # if data is a single column (1D array) reshape into a 2D array (matrix with one column)
-        if len(self.active_data.shape) == 1:
-            self.active_data = self.active_data.reshape(-1, 1)
-
-    def get_time_offset(self):
-        """
-        Corrects for time offset from skipping the first row of the data files, which contain
-        zero displacement, to avoid singularities in the SPM t-statistic. Because of this skip
-        all time is offset proportionally to the number of rows skipped.
-
-        This function assumes the standard 1kHz TMG sample rate, so each row is one millisecond
-        """
-        return self.start_row
-    # -----------------------------------------------------------------------------
-    # END SPM SIGNAL PROCESSING FUNCTIONS
-    # -----------------------------------------------------------------------------
-
-    # -----------------------------------------------------------------------------
-    # START DATA SHAPE ACCOMODATION FUNCTIONS
-    # -----------------------------------------------------------------------------
-    def match_rows(self, base_rows, pot_rows):
-        """
-        If there are more potentiated rows than baseline rows, trims number of rows in potentiated array
-         to match number of rows in baseline array
-        And vice versa for opposite case
-
-        :param base_rows:
-        :param pot_rows:
-        :return:
-        """
-        if base_rows < pot_rows:  # more potentiated rows; trim potentiated to match baseline
-            self.active_data = self.active_data[0:base_rows, :]
-
-        elif base_rows > pot_rows:  # more baseline rows; trim baseline to match potentiated
-            self.baseline_data = self.baseline_data[0:pot_rows, :]
-
-    def match_cols(self, base_rows, base_cols, active_rows, active_cols):
-        """
-        If there are more potentiated columns than baseline columns, adds more columns to baseline array until the
-         number of columns in baseline and potentiated match.
-        And vice versa for opposite case
-
-        Extra columns are found by taking the average of the existing columns, and then adding noise to each datapoint;
-         the noise size is in the interval of +/1 0.1 of each data point's absolute value.
-
-        :param base_cols:
-        :param active_cols:
-        :return:
-        """
-        if base_cols < active_cols:  # more potentiated columns; add more noisy averaged baseline columns
-            temp_baseline_data = np.zeros(shape=(active_rows, active_cols))  # declare empty array with proper dimensions (more columns)
-            col_avg = self.baseline_data.mean(axis=1)  # get column average
-
-            for i, col in enumerate(self.baseline_data.T):  # fill expanded array's first columns with existing baseline data
-                temp_baseline_data[:,i] = col
-            for j in range(base_cols, active_cols):
-                temp_baseline_data[:,j] = col_avg + 0.1 * np.random.uniform(-np.abs(col_avg), abs(col_avg))  # add a noisy average of original columns. adds in range of \pm 10 percent of each data point
-
-            self.baseline_data = temp_baseline_data # overwrite old data with correctly sized array
-
-        elif base_cols > active_cols:  # more baseline columns; add more noisy averaged potentiated columns
-            temp_active_data = np.zeros(shape=(base_rows, base_cols))  # declare empty array with proper dimensions (more columns)
-            col_avg = self.active_data.mean(axis=1)  # get column average
-
-            for i, col in enumerate(self.active_data.T):  # fill expanded array's first columns with existing potentiated data
-                temp_active_data[:,i] = col
-            for j in range(active_cols, base_cols):
-                temp_active_data[:,j] = col_avg + 0.1 * np.random.uniform(-np.abs(col_avg), abs(col_avg))  # add a noisy average of original columns. adds in range of \pm 10 percent of each data point
-
-            self.active_data = temp_active_data # overwrite old data with correctly sized array
-
-    def increase_cols(self, base_rows, base_cols, active_rows, active_cols):
-        """
-        Extra columns are found by taking the average of the existing columns, and then adding noise to each datapoint;
-         the noise size is in the interval of +/1 0.1 of each data point's absolute value.
-
-        :param base_cols:
-        :param active_cols:
-        :return:
-        """
-        temp_baseline_data = np.zeros(shape=(active_rows, 5))  # declare empty array with 5 columns
-        col_avg = self.baseline_data.mean(axis=1)  # get column average
-
-        for i, col in enumerate(self.baseline_data.T):  # fill expanded array's first columns with existing baseline data
-            temp_baseline_data[:,i] = col
-        for j in range(base_cols, active_cols):
-            temp_baseline_data[:,j] = col_avg + 0.1 * np.random.uniform(-np.abs(col_avg), abs(col_avg))  # add a noisy average of original columns. adds in range of \pm 10 percent of each data point
-
-        self.baseline_data = temp_baseline_data # overwrite old data with correctly sized array
-
-        temp_active_data = np.zeros(shape=(base_rows, 5))  # declare empty array with 5 columns
-        col_avg = self.active_data.mean(axis=1)  # get column average
-
-        for i, col in enumerate(self.active_data.T):  # fill expanded array's first columns with existing potentiated data
-            temp_active_data[:,i] = col
-        for j in range(active_cols, base_cols):
-            temp_active_data[:,j] = col_avg + 0.1 * np.random.uniform(-np.abs(col_avg), abs(col_avg))  # add a noisy average of original columns. adds in range of \pm 10 percent of each data point
-
-        self.active_data = temp_active_data # overwrite old data with correctly sized array
-    # -----------------------------------------------------------------------------
-    # END DATA SHAPE ACCOMODATION FUNCTIONS
-    # -----------------------------------------------------------------------------
-
-    # -----------------------------------------------------------------------------
-    # START ANALYSIS AND EXPORT FUNCTIONS
-    # -----------------------------------------------------------------------------
     def is_import_data_null(self):
         """
         Used as a null check for imported data
@@ -672,137 +363,68 @@ class SPMInterface:
         else:
             return False
 
-    def get_ti(self):
-        """
-        Returns the spm.t and spm.ti objects resulting from an SMP t test between
-        the currently loaded baseline and active data
-        """
-        try:
-            # t = spm1d.stats.ttest2(self.baseline_data.T, self.pot_data.T, equal_var=False)
-            t = spm1d.stats.ttest2(self.active_data.T, self.baseline_data.T, equal_var=False)
-            ti = t.inference(alpha=0.05, two_tailed=False, interp=True)
-            return t, ti
-        except Exception as e:
-            print("Error performing SPM analysis: " + str(e))
-            return
+    def reshape_data(self):
+        """ Reshapes imported measurement data, if necessary, into a format compatible with spm1d """
 
-    def plot_test_results(self):
-        """
-        Plots the baseline and active data's mean and standard deviation clouds on axis one
-        Plots the SPM t-test between the baseline and active data on axis two
-        """
-        try:
-            t, ti = self.get_ti()  # try getting t an ti objects
-        except Exception as e:
-            print("Error performing SPM analysis: " + str(e))
-            return
+        base_shape = self.baseline_data.shape
+        active_shape = self.active_data.shape
 
-        self.set_imported_data_description(self.spm_text_area, self.export_spm_params(ti))
+        base_rows = base_shape[0]
+        base_cols = base_shape[1]
+        active_rows = active_shape[0]
+        active_cols = active_shape[1]
 
-        num_points = np.shape(self.active_data)[0]  # could also use base_data
-        time = np.linspace(0, num_points - 1, num_points) + self.get_time_offset()  # include time offset
+        if base_rows != active_rows and base_cols == active_cols:  # same number columns, different number of rows
+            self.baseline_data, self.active_data = data_processing.match_rows(self.baseline_data, self.active_data, base_rows, active_rows)
 
-        active_mean = np.mean(self.active_data, axis=1)
-        base_mean = np.mean(self.baseline_data, axis=1)
-        pot_sd = np.std(self.active_data, ddof=1, axis=1)  # note SD is lessened somewhat for reasonable plot scale
-        base_sd = np.std(self.baseline_data, ddof=1, axis=1)
+        elif base_rows == active_rows and base_cols != active_cols:  # same number rows, different number columns
+            self.baseline_data, self.active_data = data_processing.match_cols(self.baseline_data, self.active_data, base_rows, base_cols, active_rows, active_cols)
 
-        fig, axes = plt.subplots(1, 2, figsize=(8, 4))
+        elif base_shape != active_shape:  # different number of rows AND different number of columns
+            self.baseline_data, self.active_data = data_processing.match_rows(self.baseline_data, self.active_data, base_rows, active_rows)
+            self.baseline_data, self.active_data = data_processing.match_cols(self.baseline_data, self.active_data, base_rows, base_cols, active_rows, active_cols)
 
-        # plot TMG measurement
-        ax = axes[0]
-        self.remove_spines(ax)
-        ax.set_xlabel("Time [ms]")
-        ax.set_ylabel("Position [mm]")
+        if base_cols == 1 and active_cols == 1:
+            self.baseline_data, self.active_data = data_processing.increase_cols(self.baseline_data, self.active_data, base_rows, base_cols, active_rows, active_cols)
 
-        ax.plot(time, base_mean, color=self.base_color, linewidth=2.5, label="Baseline", zorder=4)  # plot in front
-        ax.plot(time, active_mean, color=self.get_active_color(), linewidth=2.5, label=self.get_mode_name(), zorder=3)
-        ax.fill_between(time, active_mean - pot_sd, active_mean + pot_sd, color=self.get_active_color(), alpha=self.active_alpha, zorder=2)  # standard deviation clouds
-        ax.fill_between(time, base_mean - base_sd, base_mean + base_sd, color=self.base_color, alpha=self.base_alpha, zorder=1)  # standard deviation clouds
-
-        ax.axhline(y=0, color='k', linestyle=':')  # dashed line at y = 0
-        ax.legend()
-
-        # plot SPM results:
-        ax = axes[1]
-        self.remove_spines(ax)
-        ax.set_xlabel("Time [ms]")
-        ax.set_ylabel("SPM $t$ Statistic", labelpad=-0.1)
-
-        ax.plot(time, t.z, color=self.tline_color)  # plot t-curve
-        ax.axhline(y=0, color='#000000', linestyle=':')  # dashed line at y = 0
-        ax.axhline(y=ti.zstar, color='#000000', linestyle='--')  # dashed line at t threshold
-        ax.text(73, ti.zstar + 0.4, "$\\alpha = {:.2f}$\n$t^* = {:.2f}$".format(ti.alpha, ti.zstar),
-                va='bottom', ha='left', bbox=dict(facecolor='#FFFFFF', edgecolor='#222222', boxstyle='round,pad=0.3'))
-
-        ax.fill_between(time, t.z, ti.zstar, where=t.z >= ti.zstar, interpolate=True, color=self.get_tfill_color())  # shade between curve and threshold
-        plt.tight_layout()
-
-        figure_output_path = str(Path(self.baseline_filename).parent) + "/spm-figure.png"
-        print(figure_output_path)
-        if self.save_figures: plt.savefig(figure_output_path, dpi=150)
-        plt.show()
-
-    @staticmethod
-    def remove_spines(ax):
-        """ Simple auxiliary function to remove upper and right spines from the passed axis"""
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.get_xaxis().tick_bottom()
-        ax.get_yaxis().tick_left()
-
-    def run_two_sample_test(self, base_data, pot_data, x_label="Independent Variable", y_label="Dependent Variable"):
-        """
-        Runs and plots the results of a two-sample SPM t test between base_data and pot_data.
-        Plot results in an external window using SPM's plotting utilities
-        :param base_data: n x m double (n number of trials, m number of data points per trial, usually m \gg n)
-        :param pot_data: n x m double
-        :param x_label: label for x axis
-        :param y_label: label for x axis
-        :return:
-        """
-        try:
-            t = spm1d.stats.ttest2(pot_data, base_data, equal_var=False)
-            ti = t.inference(alpha=0.05, two_tailed=False, interp=True)
-        except Exception as e:
-            print("Error performing SPM analysis: " + str(e))
-            return
-
-        self.set_imported_data_description(self.spm_text_area, self.export_spm_params(ti))
-
-        #  Plot:
-        plt.close('all')
-        # plot mean and SD:
-        plt.figure(figsize=(8, 3.5))
-        ax = plt.axes((0.1, 0.15, 0.35, 0.8))
-
-        spm1d.plot.plot_mean_sd(pot_data, label=self.get_mode_name(), linecolor='r', facecolor='r')
-        spm1d.plot.plot_mean_sd(base_data, label="Baseline")
-
-        ax.axhline(y=0, color='k', linestyle=':')
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
-        plt.legend()
-
-        # plot SPM results:
-        ax = plt.axes((0.55, 0.15, 0.35, 0.8))
-        ti.plot()
-        ax.text(73, ti.zstar + 0.4, "$\\alpha = {:.2f}$\n$t^* = {:.2f}$".format(ti.alpha, ti.zstar),
-                va='bottom', ha='left', bbox=dict(facecolor='#FFFFFF', edgecolor='#222222', boxstyle='round,pad=0.3'))
-        # ti.plot_threshold_label(fontsize=10, color='black')
-        # ti.plot_p_values(size=10)  # offsets=[(0, 0.3)]
-        ax.set_xlabel(x_label)
-        plt.show()
     # -----------------------------------------------------------------------------
-    # END ANALYSIS AND EXPORT FUNCTIONS
+    # START SPM SIGNAL PROCESSING FUNCTIONS
     # -----------------------------------------------------------------------------
+    # TODO move to data_processing
+    def process_baseline_data(self):
+        if self.baseline_data is None:  # null check
+            return
 
+        if self.normalize: self.baseline_data = self.baseline_data / self.baseline_data.max(axis=0)  # normalize
+        self.baseline_data = self.baseline_data + self.position_offset  # add vertical offset
 
-def practice():
-    filename = "test.txt"
-    with open(filename, 'w') as output:
-        output.write("Line 1")
-        output.write("Line 2")
+        # if data is a single column (1D array) reshape into a 2D array (matrix with one column)
+        if len(self.baseline_data.shape) == 1:
+            self.baseline_data = self.baseline_data.reshape(-1, 1)
+
+    def process_active_data(self):
+        if self.active_data is None:  # null check
+            return
+
+        if self.normalize: self.active_data = self.active_data / self.active_data.max(axis=0)  # normalize
+        self.active_data = self.active_data + self.position_offset  # add vertical offset
+
+        # if data is a single column (1D array) reshape into a 2D array (matrix with one column)
+        if len(self.active_data.shape) == 1:
+            self.active_data = self.active_data.reshape(-1, 1)
+
+    def get_time_offset(self):
+        """
+        Corrects for time offset from skipping the first row of the data files, which contain
+        zero displacement, to avoid singularities in the SPM t-statistic. Because of this skip
+        all time is offset proportionally to the number of rows skipped.
+
+        This function assumes the standard 1kHz TMG sample rate, so each row is one millisecond
+        """
+        return self.start_row
+    # -----------------------------------------------------------------------------
+    # END SPM SIGNAL PROCESSING FUNCTIONS
+    # -----------------------------------------------------------------------------
 
 
 def gui_launch():
@@ -818,7 +440,6 @@ def development_launch():
 
 
 if __name__ == "__main__":
-    # TODO switch betwee development vs GUI launch here
     gui_launch()
     # development_launch()
     # practice()
