@@ -20,7 +20,7 @@ class SPMInterface:
         :param pot_filename:
         """
         self.BASE_POT = "BASE_POT"
-        self.BASE_ATRO = "BASE_INJ"
+        self.BASE_ATRO = "BASE_ATRO"
         self.mode = self.BASE_POT  # "BASE_POT" or "BASE_INJ" for comparing baseline to either potentiated or injured
 
         self.baseline_filename = ""  # name of file holding baseline data
@@ -402,6 +402,10 @@ class SPMInterface:
         if len(self.baseline_data.shape) == 1:
             self.baseline_data = self.baseline_data.reshape(-1, 1)
 
+        if self.active_data is not None:  # if active data has been set
+            # fix potential false SPM significance region problems
+            self.baseline_data, self.active_data = data_processing.fix_false_spm_significance(self.baseline_data, self.active_data, mode=self.mode)
+
     def process_active_data(self):
         if self.active_data is None:  # null check
             return
@@ -412,6 +416,10 @@ class SPMInterface:
         # if data is a single column (1D array) reshape into a 2D array (matrix with one column)
         if len(self.active_data.shape) == 1:
             self.active_data = self.active_data.reshape(-1, 1)
+
+        if self.baseline_data is not None:  # if baseline data has been set
+            # fix potential false SPM significance region problems
+            self.baseline_data, self.active_data = data_processing.fix_false_spm_significance(self.baseline_data, self.active_data, mode=self.mode)
 
     def get_time_offset(self):
         """

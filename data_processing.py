@@ -6,9 +6,48 @@ import numpy as np
 import spm1d
 
 
+START_ROWS_TO_AVERAGE = 3  # number of initial data points to average over when fixing initial false potentiation
+BASE_POT = "BASE_POT"
+BASE_ATRO = "BASE_ATRO"
+
 # -----------------------------------------------------------------------------
 # A collection of functions used as first aid to ensure baseline and potentiated measurement files
 #  intended for use with SPM have the same number of rows and columns
+# -----------------------------------------------------------------------------
+
+
+def fix_false_spm_significance(base_data, active_data, mode=BASE_POT):
+    """
+    Fixes issue of SPM showing significance regions for miniscule (e.g. order 0.001 mm) differences
+     between potentiated and initial measurements over the first few milliseconds of a TMG measurement
+    These differences are essentially random artifacts from initial filtering, and do not represent physical information
+    I thus remove them by subtracting the difference between potentiated and baseline data from the potentiated data.
+    This is safe to do without affecting measurement results in the later stages because the initial differences
+     are of order 0.001 mm and the TMG curve is of order 10 mm.
+
+    :param base_data: 2D numpy array containing raw baseline data. Rows traverse time and columns traverse measurements
+    :param active_data: 2D numpy array containing raw "active" i.e. potentiated/atrophied data. same format as base_data
+    :param mode: to distinguish between a "baseline-potentiated" comparison and a "baseline-atrophied" comparison
+    :return: adjusted potentiation data such that false SPM significance disappears
+    """
+    base_mean = np.mean(np.mean(base_data[0:START_ROWS_TO_AVERAGE, :], axis=1))  # the average of the average baseline signal over the first few data points
+    active_mean = np.mean(np.mean(active_data[0:START_ROWS_TO_AVERAGE, :], axis=1))
+    if mode == BASE_POT:
+        if active_mean > base_mean:
+            active_data -= np.mean(active_mean - base_mean)
+    elif mode == BASE_ATRO:
+        if base_mean > active_mean:
+            base_data -= np.mean(base_mean - active_mean)
+    else:  # should never happen
+        print("Caution! Working mode not detected, assuming baseline-poteniated.")
+        if active_mean > base_mean:
+            active_data -= np.mean(active_mean - base_mean)
+
+    return base_data, active_data
+
+
+# -----------------------------------------------------------------------------
+# END DATA SHAPE ACCOMODATION FUNCTIONS
 # -----------------------------------------------------------------------------
 def match_rows(baseline_data, active_data, base_rows, active_rows):
     """
@@ -112,3 +151,6 @@ def increase_cols(baseline_data, active_data, base_rows, base_cols, active_rows,
 # -----------------------------------------------------------------------------
 # END DATA SHAPE ACCOMODATION FUNCTIONS
 # -----------------------------------------------------------------------------
+
+
+

@@ -1,11 +1,11 @@
 from pathlib import Path
-import os
 import traceback
 from tkinter import filedialog
 import numpy as np
 import spm1d
 
 import plotting
+import data_processing
 
 
 def get_spm_ti_string_description(ti, time_offset=0):
@@ -210,7 +210,6 @@ def set_file_smp_analysis(parent_dir, file_basename, sets_to_convert):
         EM1234-pot-3.csv
     :param file_basename: data file basename e.g. "EM1234"
     :param sets_to_convert: list of the set numbers of convert e.g. [1, 2, 3]
-    :return:
     """
 
     start_row = 1  # csv data file row at which to begin reading data (0-indexed)
@@ -224,21 +223,23 @@ def set_file_smp_analysis(parent_dir, file_basename, sets_to_convert):
         figure_output_path = parent_dir + file_basename + "-set{}.png".format(set_num)
         base_data = np.loadtxt(base_filename, delimiter=",", skiprows=start_row, max_rows=max_rows)  # load data
         pot_data = np.loadtxt(pot_filename, delimiter=",", skiprows=start_row, max_rows=max_rows)  # load data
+        base_data, pot_data = data_processing.fix_false_spm_significance(base_data, pot_data, mode=data_processing.BASE_POT)
 
         t, ti = get_spm_ti(base_data, pot_data)
         export_ti_parameters(ti, time_offset=start_row, baseline_filename=base_filename, active_filename=pot_filename, mode_name="Potentiated", output_file_path=params_output_path)
-        plotting.plot_test_results(t, ti, base_data, pot_data, figure_output_path, time_offset=0, mode=plotting.BASE_POT, mode_name="Potentiated", show_plot=False)
+        plotting.plot_test_results(t, ti, base_data, pot_data, figure_output_path, time_offset=start_row, mode=plotting.BASE_POT, mode_name="Potentiated", show_plot=False)
 
 
-def analysis_wrapper():
-    """ Wrapper method for running a analysis """
-    # parent_dir = "/Users/ejmastnak/Documents/Dropbox/projects-and-products/tmg-bmc/spm/analysis/"
-    # directories = ["MM20210319105636_1/", "EP20210319102018/", "MM20210319115856/", "NF20210319122049/", "ZI20210319123747/"]
-    # sets_to_convert = [list(range(2, 8)), list(range(1, 9)), list(range(1, 5)), list(range(1, 5)), list(range(1, 6))]
-
-    parent_dir = "/Users/ejmastnak/Documents/Media/tmg-bmc-media/measurements/potenciacija-19-03-2021/NF-squat/"
-    directories = ["NF20210319113716/"]
-    sets_to_convert = [list(range(1, 6))]
+def set_file_analysis_wrapper():
+    """
+    Wrapper method for performing SPM analysis where each set is separately analyzed.
+    How to use:
+        - Define parent directory containing meeasurement directories of individual athletes
+        - Define a list of sets to convert for each individual athlete
+    """
+    parent_dir = "/Users/ejmastnak/Documents/Media/tmg-bmc-media/measurements/analysis-spm-potenciacija-19-03-2021/"
+    directories = ["MM20210319105636_1/", "EP20210319102018/", "MM20210319115856/", "NF20210319122049/", "NF20210319113716/", "ZI20210319123747/"]
+    sets_to_convert = [list(range(2, 8)), list(range(1, 9)), list(range(1, 5)), list(range(1, 5)), list(range(1, 6)), list(range(1, 6))]
 
     for i, dir in enumerate(directories):
         print(dir)
@@ -248,4 +249,4 @@ def analysis_wrapper():
 
 
 if __name__ == "__main__":
-    analysis_wrapper()
+    set_file_analysis_wrapper()
