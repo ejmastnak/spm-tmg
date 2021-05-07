@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import traceback
 from tkinter import filedialog
 import numpy as np
@@ -6,6 +7,7 @@ import spm1d
 
 import plotting
 import data_processing
+import spm_io
 
 
 def get_spm_ti_string_description(ti, time_offset=0):
@@ -197,21 +199,24 @@ def get_spm_ti(baseline_data, active_data):
         return None
 
 
-def set_file_smp_analysis(parent_dir, file_basename, sets_to_convert):
+def multi_set_spm_analysis(parent_dir, file_basename, sets_to_convert):
     """
-    :param parent_dir: full path to a directory containing data files
-
-     The files should be named in the form
-        EM1234-base-1.csv
-        EM1234-base-2.csv
+    Import full path to a directory containing baseline and potentiated CSV file for each set of a TMG measurement for a SINGLE athlete
+    The files should be named in the form
+        EM1234-base-1.csv   # baseline, set 1
+        EM1234-base-2.csv   # baseline, set 2
         EM1234-base-3.csv
-        EM1234-pot-1.csv
-        EM1234-pot-2.csv
+        EM1234-pot-1.csv    # potentiated, set 1
+        EM1234-pot-2.csv    # potentiated, set 2
         EM1234-pot-3.csv
-    :param file_basename: data file basename e.g. "EM1234"
+
+    Exports csv file of spm parameters (e.g. threshold, centroid time, etc...) for each set's baseline-potentiated file pair
+    Exports a png graph of original measurement and spm t-statistic plot for each set's baseline-potentiated file pair
+
+    :param parent_dir: full path to a directory containing data files
+    :param file_basename: data file basename e.g. "EM1234" for above example
     :param sets_to_convert: list of the set numbers of convert e.g. [1, 2, 3]
     """
-
     start_row = 1  # csv data file row at which to begin reading data (0-indexed)
     max_rows = 100  # number of rows to read after start_row is reached
 
@@ -230,23 +235,145 @@ def set_file_smp_analysis(parent_dir, file_basename, sets_to_convert):
         plotting.plot_test_results(t, ti, base_data, pot_data, figure_output_path, time_offset=start_row, mode=plotting.BASE_POT, mode_name="Potentiated", show_plot=False)
 
 
-def set_file_analysis_wrapper():
+def all_set_spm_analysis(data_dir, base_filenames):
     """
-    Wrapper method for performing SPM analysis where each set is separately analyzed.
-    How to use:
-        - Define parent directory containing meeasurement directories of individual athletes
-        - Define a list of sets to convert for each individual athlete
+    Input full path to a directory containing baseline and potentiated CSV files for TMG measurements of MULTIPLE athletes
+    The files should be named in the form
+        EM1234-base.csv   # baseline, first athlete
+        EM1234-pot.csv    # potentiated, first athlete
+        SD1234-base.csv   # baseline, second athlete
+        SD1234-pot.csv    # potentiated, second athlete
+        JZ1234-base.csv   # baseline, third athlete
+        JZ1234-pot.csv    # potentiated, third athlete
+        etc...
+
+    Input a list of "base" filenames for each athlete of the form e.g. ["EM1234", "SD1234", "JZ1234"]
+
+    Exports csv file of spm parameters (e.g. threshold, centroid time, etc...) for each athlete's baseline-potentiated file pair
+    Exports a png graph of original measurement and spm t-statistic plot for each athlete's baseline-potentiated file pair
+
+    :param data_dir: full path to a directory containing data files
+    :param base_filenames: list of the set numbers of convert e.g. [1, 2, 3]
+    """
+    start_row = 1  # csv data file row at which to begin reading data (0-indexed)
+    max_rows = 100  # number of rows to read after start_row is reached
+
+    param_output_dir = spm_io.make_output_dir(data_dir + "params-spm-csv")
+    fig_output_dir = spm_io.make_output_dir(data_dir + "spm-figures")
+
+    for file_basename in base_filenames:
+        print(file_basename)
+        base_filename = data_dir + file_basename + "-base.csv"
+        pot_filename = data_dir + file_basename + "-pot.csv"
+
+        params_output_path = param_output_dir + file_basename + "-spm-params.csv"
+        figure_output_path = fig_output_dir + file_basename + "-spm-figure.png"
+        base_data = np.loadtxt(base_filename, delimiter=",", skiprows=start_row, max_rows=max_rows)  # load data
+        pot_data = np.loadtxt(pot_filename, delimiter=",", skiprows=start_row, max_rows=max_rows)  # load data
+        base_data, pot_data = data_processing.fix_false_spm_significance(base_data, pot_data, mode=data_processing.BASE_POT)
+
+        t, ti = get_spm_ti(base_data, pot_data)
+        export_ti_parameters(ti, time_offset=start_row, baseline_filename=base_filename, active_filename=pot_filename, mode_name="Potentiated", output_file_path=params_output_path)
+        plotting.plot_test_results(t, ti, base_data, pot_data, figure_output_path, time_offset=start_row, mode=plotting.BASE_POT, mode_name="Potentiated", show_plot=False, save_figures=True)
+
+
+def multi_set_spm_analysis_wrapper():
+    """
+    Wrapper method for performing SPM analysis on the following file structure
+
+    Input path to parent directory, containing subdirectories for a SINGLE athelte named in the standard TMG-form e.g. "EM1234"
+    Each sub-directory should contain baseline and potentiated CSV files for each set of a TMG measurement for this SINGLE athlete
+    The files should be named in the form
+        EM1234-base-1.csv   # baseline, set 1
+        EM1234-base-2.csv   # baseline, set 2
+        EM1234-base-3.csv
+        EM1234-pot-1.csv    # potentiated, set 1
+        EM1234-pot-2.csv    # potentiated, set 2
+        EM1234-pot-3.csv
+
+    Input list of sets to convert for each individual athlete
+    Calls multi_set_spm_analysis(...) for each individual athlete,
+     which exports csv file of SPM params and a png file of SPM graphs---see function documentation
     """
     parent_dir = "/Users/ejmastnak/Documents/Media/tmg-bmc-media/measurements/analysis-spm-potenciacija-19-03-2021/"
-    directories = ["MM20210319105636_1/", "EP20210319102018/", "MM20210319115856/", "NF20210319122049/", "NF20210319113716/", "ZI20210319123747/"]
+    sub_dirs = ["MM20210319105636_1/", "EP20210319102018/", "MM20210319115856/", "NF20210319122049/", "NF20210319113716/", "ZI20210319123747/"]
     sets_to_convert = [list(range(2, 8)), list(range(1, 9)), list(range(1, 5)), list(range(1, 5)), list(range(1, 6)), list(range(1, 6))]
 
-    for i, dir in enumerate(directories):
+    for i, dir in enumerate(sub_dirs):
         print(dir)
         file_basename = dir[0:-1]  # drop backslash
-        set_file_smp_analysis(parent_dir + dir, file_basename, sets_to_convert[i])
+        multi_set_spm_analysis(parent_dir + dir, file_basename, sets_to_convert[i])
         print()
 
 
+def all_set_spm_analysis_wrapper():
+    """
+    Wrapper method for performing SPM analysis on the following file structure:
+
+    Input full path to a directory containing baseline and potentiated CSV files for TMG measurements of MULTIPLE athletes
+    The files should be named in the form
+        EM1234-base.csv   # baseline, first athlete
+        EM1234-pot.csv    # potentiated, first athlete
+        SD1234-base.csv   # baseline, second athlete
+        SD1234-pot.csv    # potentiated, second athlete
+        JZ1234-base.csv   # baseline, third athlete
+        JZ1234-pot.csv    # potentiated, third athlete
+        etc...
+
+    Input a list of "base" filenames for each athlete of the form e.g. ["EM1234", "SD1234", "JZ1234"]
+
+    Calls all_set_spm_analysis(...) which exports csv file of SPM params and a png file of SPM graphs---see function documentation
+    """
+    base_filenames = ['1-BR20200910125909', '2-SZ20200901134322', '3-EM20200901124828', '4-SD20200901145937',
+                      '5-SK20200901142319', '6-SD20200929090956', '7-SK20200929095140', '8-NF20200929102126',
+                      '9-MM20200929105429', '10-MK20200929112805', '11-JJ20200929120454', '12-JZ20200924121704',
+                      '13-ZI20200924091029', '14-VT20200924094806', '15-MK20200924102106', '16-LR20200924113647',
+                      '17-LH20200924105451', '18-JL20200910100638', '19-MC20200910105450', '20-MS20200910112714',
+                      '21-SR20200910121233', '22-VD20201009103409', '23-AL20201014125345', '24-ME20201104141336',
+                      '25-IL20201104132459', '26-FD20201105113904', '27-MM20201021123025', '30-BB20210312101025',
+                      '31-EM20210312111435', '32-JZ20210312131656', '33-SD20210312121833', '34-SK20210312114610',
+                      '35-SR20210312124932', '36-SZ20210312103958', '37-AL20210317133110', '38-IF20210317130746',
+                      '39-JL20210317121435', '40-MM20210317111914', '41-NF20210317114800', '42-NU20210317124142',
+                      '43-VT20210317105103', '44-ZI20210317135522']
+    data_dir = "/Users/ejmastnak/Documents/Media/tmg-bmc-media/project-potentiation-spm-rdd-2021/data-csv-BP-100ms-raw/"
+    all_set_spm_analysis(data_dir, base_filenames)
+
+
+def per_set_analysis_wrapper():
+    """
+    TODO not sure how this is different from multi_set_spm_analysis_wrapper
+    I think this was used when testing false potentiation initial spike...?
+
+    Wrapper method for performing SPM analysis where each set is separately analyzed.
+    How to use:
+        - Define parent directory containing measurement directories of individual athletes
+        - Define a list of sets to convert for each individual athlete
+    """
+    parent_dir = "/Users/ejmastnak/Documents/Media/tmg-bmc-media/measurements/klanec-17-03-2021/"
+
+    start_row = 1  # csv data file row at which to begin reading data (0-indexed)
+    max_rows = 100  # number of rows to read after start_row is reached
+
+    for subdir, dirs, files in os.walk(parent_dir):
+        for directory in dirs:
+            file_basename = directory
+            pot_file = parent_dir + directory + "/" + file_basename + "-pot.csv"
+            base_file = parent_dir + directory + "/" + file_basename + "-base.csv"
+            print(pot_file)
+            print(base_file)
+
+            figure_output_path = parent_dir + directory + "/" + file_basename + "-2.png"
+            base_data = np.loadtxt(base_file, delimiter=",", skiprows=start_row, max_rows=max_rows)  # load data
+            pot_data = np.loadtxt(pot_file, delimiter=",", skiprows=start_row, max_rows=max_rows)  # load data
+            base_data, pot_data = data_processing.fix_false_spm_significance(base_data, pot_data, mode=data_processing.BASE_POT)
+
+            t, ti = get_spm_ti(base_data, pot_data)
+            plotting.plot_test_results(t, ti, base_data, pot_data, figure_output_path, time_offset=start_row, mode=plotting.BASE_POT, mode_name="Potentiated", show_plot=False)
+
+            print()
+
+
 if __name__ == "__main__":
-    set_file_analysis_wrapper()
+    # set_file_analysis_wrapper()
+    # per_set_analysis_wrapper()
+    all_set_spm_analysis_wrapper()
