@@ -277,7 +277,7 @@ class SPMInterface:
             print("Error performing SPM analysis: " + str(e))
             return
 
-        analysis.export_t_curve(self.baseline_data, self.active_data, self.get_time_offset())
+        analysis.export_t_curve(t, time_offset=self.get_time_offset())
 
     def export_tparams(self, *args):  # used to write an output file
         """
