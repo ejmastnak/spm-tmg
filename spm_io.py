@@ -34,18 +34,18 @@ def make_output_dir(base_dir_name):
 def convert_directory(directory, conversion_mode, base_reps=1, pot_reps=1):
     """
     Input the path to a directory containing TMG-format excel files
-    Converts all ".xlsx" files in the specified directory to csv files
+    Converts all ".xlsx" files in the specified directory to csv files, according to the specified conversion_mode
     """
     output_dir = make_output_dir(directory + "converted")
 
     for filename in sorted(os.listdir(directory)):
         if ".xlsx" in filename and "$" not in filename:
             print(filename)
-            if conversion_mode == EXCEL_TO_CSV:
+            if conversion_mode == EXCEL_TO_CSV:  # one csv file per single excel file
                 excel_to_csv(directory, filename, output_dir)
-            elif conversion_mode == EXCEL_TO_CSV_BASE_POT:
+            elif conversion_mode == EXCEL_TO_CSV_BASE_POT:  # one baseline and one potentiated csv file per excel file
                 excel_to_csv_base_pot(directory, filename, output_dir, base_reps=base_reps, pot_reps=pot_reps)
-            elif conversion_mode == EXCEL_TO_CSV_BASE_POT_SET_FILES:
+            elif conversion_mode == EXCEL_TO_CSV_BASE_POT_SET_FILES:  # one baseline and one potentiated csv file for each set in the excel file
                 excel_to_csv_base_pot_set_files(directory, filename, output_dir, base_reps=base_reps, pot_reps=pot_reps)
             else:
                 print("Aborting. Invalid conversion mode.")
@@ -185,17 +185,16 @@ def excel_to_csv_base_pot_set_files(parent_dir, filename, output_dir, base_reps=
 def conversion_wrapper():
     """ Wrapper method for running a conversion """
     # folder = "klanec-17-03-2021/"
-    convert_dir = "/Users/ejmastnak/Documents/Media/tmg-bmc-media/measurements/potenciacija-19-03-2021/NF-squat/"
+    # convert_dir = "/Users/ejmastnak/Documents/Media/tmg-bmc-media/measurements/potenciacija-19-03-2021/NF-squat/"
+    # convert_dir = "/Users/ejmastnak/Documents/Media/tmg-bmc-media/project-potentiation-spm-rdd-2021/data-excel-raw/test/"
+    convert_dir = "/Users/ejmastnak/Documents/Media/tmg-bmc-media/convert/"
     base_reps = 8
     pot_reps = 8
-    convert_directory(convert_dir, EXCEL_TO_CSV_BASE_POT, base_reps=base_reps, pot_reps=pot_reps)
-    # convert_directory(convert_dir, EXCEL_TO_CSV_BASE_POT_SET_FILES, base_reps=base_reps, pot_reps=pot_reps)
+    # convert_directory(convert_dir, EXCEL_TO_CSV_BASE_POT, base_reps=base_reps, pot_reps=pot_reps)
+    convert_directory(convert_dir, EXCEL_TO_CSV_BASE_POT_SET_FILES, base_reps=base_reps, pot_reps=pot_reps)
 
 
 DATA_START_ROW = 24
-DATA_START_COL = "B"
-# DATA_END_COL = "Q"
-DATA_END_COL = "DY"
 
 EXCEL_TO_CSV = 1  # take the measurements from a TMG excel file and put them verbatim in a CSV file. Do not separate baseline or potentiated
 EXCEL_TO_CSV_BASE_POT = 2  # save all baseline measurements in a TMG excel file in one CSV file and all potentiated measurements in a separate CSV file.
